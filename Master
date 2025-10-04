@@ -260,9 +260,7 @@ function calc() {
     oilMap[oilType].monthlyCars
   ]);
   writeTable("OIL CHANGE", ["OIL TYPE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
-
 }
-
 
 // MENU
 function onOpen() {
@@ -292,64 +290,50 @@ function processFormSubmission() {
     const targetFormat = sheet.getRange(2, 1, 1, lastCol);
     sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
   }
-
-
-}
-
-// EMPLOYEE IMAGES
-const employeeImageMap = {
-  "SAMPATH": "https://drive.google.com/uc?export=view&id=15JZo99FEhRPCG4s5Nb6-hCAcs672IJz5",
-  "LAKSHMAN": "https://drive.google.com/uc?export=view&id=16NgrXI6HpGBKWMKVOvWzW5cVdN-hHlNp",
-  "IRAN": "https://drive.google.com/uc?export=view&id=16xopiLHLaUBJyRioJ137gKrx47uxbPBQ",
-  "SUPUN": "https://drive.google.com/uc?export=view&id=186E9cZSMr1bBTD0MUSHj1yABn6ftV3h5",
-  "ROHAN": "https://drive.google.com/uc?export=view&id=19V9dHdahywCsSGzWL8LIlrY5VMsqbEWY",
-  "JEEVANTHA": "https://drive.google.com/uc?export=view&id=1XnThOjivXW7a7-_TJr9Mjotubd2kGw_f",
-  "ASHANGA": "https://drive.google.com/uc?export=view&id=1pmBC-1_uwekzkCDsaK_Fd-nI4DVJ-5Y5",
-  "RAVINDU": "https://drive.google.com/uc?export=view&id=1vbvVHAo3fy1mrioEySOVDIyRQKsATeqL",
-  "BHARATHA": "https://drive.google.com/uc?export=view&id=1whsEc6RIJoBbHO910_aO3bl5KiNWXQTC",
-  "SAJID": "https://drive.google.com/uc?export=view&id=1LoWEr9QVHtO9cysVtMgIN0MVpYAWzMXc",
-  "UDAY": "https://drive.google.com/uc?export=view&id=19phT6Tx7fGCfIIC7gBK4PjKzZ2qBwadN",
-  "NILANGA": "https://drive.google.com/uc?export=view&id=1MSbx9SiqwF3opHt-q7eSVjlWr2rtRZV1",
-  "FAISAL": "https://drive.google.com/uc?export=view&id=1NeNOBu5c8p9VUJCkGr6tsP7iWX_hwVEx",
-  "PRASAD": "https://drive.google.com/uc?export=view&id=1Txdp_5iLvh8P0yNyf85RjS1A2O8-_Ne4",
-  "AJITH": "https://drive.google.com/uc?export=view&id=1jTi69419-weUDL8cTtO6E5hmHI2i5PXr",
-  "PIYUSH": "https://drive.google.com/uc?export=view&id=1v8YJFCL0aMlLF-iSycb6Ex7xuDn2cCtW",
-  "IRESHAN": "https://drive.google.com/uc?export=view&id=1SYVXs5AnDbabB3D7oPbhzKFlUzTF4_Ed",
-  "SHANUKA": "https://drive.google.com/uc?export=view&id=1sn9qrqHl_M3lCmI0yvlhhN8N1zQ_BRje",
-  "SHAHID": "https://drive.google.com/uc?export=view&id=132ZiN7225UG3LFZs1LWc7WCO_JDOlx8A"
-};
-
-// Run on each new form submission
-function assignImageToNewEntry() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
-  const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) return; // no data
-  const name = sheet.getRange(lastRow, 3).getValue().toString().trim().toUpperCase(); // column C = employee
-  const cell = sheet.getRange(lastRow, 9); // column I
-
-  if (employeeImageMap[name]) {
-    const formula = `=IMAGE("${employeeImageMap[name]}")`;
-    cell.setFormula(formula);
-  } else {
-    cell.clearContent();
-  }
-}
-
-// Run daily at 11 PM to clear today's images
-function clearTodayImages() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+/*
+  // 4. Insert images based on employee name in column C into column I (after sorting)
   const data = sheet.getDataRange().getValues();
-  const todayStr = new Date().toDateString();
+  const employeeImageMap = {
+    "SAMPATH": "https://drive.google.com/uc?export=view&id=15JZo99FEhRPCG4s5Nb6-hCAcs672IJz5",
+    "LAKSHMAN": "https://drive.google.com/uc?export=view&id=16NgrXI6HpGBKWMKVOvWzW5cVdN-hHlNp",
+    "IRAN": "https://drive.google.com/uc?export=view&id=16xopiLHLaUBJyRioJ137gKrx47uxbPBQ",
+    "SUPUN": "https://drive.google.com/uc?export=view&id=186E9cZSMr1bBTD0MUSHj1yABn6ftV3h5",
+    "ROHAN": "https://drive.google.com/uc?export=view&id=19V9dHdahywCsSGzWL8LIlrY5VMsqbEWY",
+    "JEEVANTHA": "https://drive.google.com/uc?export=view&id=1XnThOjivXW7a7-_TJr9Mjotubd2kGw_f",
+    "ASHANGA": "https://drive.google.com/uc?export=view&id=1pmBC-1_uwekzkCDsaK_Fd-nI4DVJ-5Y5",
+    "RAVINDU": "https://drive.google.com/uc?export=view&id=1vbvVHAo3fy1mrioEySOVDIyRQKsATeqL",
+    "BHARATHA": "https://drive.google.com/uc?export=view&id=1whsEc6RIJoBbHO910_aO3bl5KiNWXQTC",
+    "SAJID": "https://drive.google.com/uc?export=view&id=1LoWEr9QVHtO9cysVtMgIN0MVpYAWzMXc",
+    "UDAY": "https://drive.google.com/uc?export=view&id=19phT6Tx7fGCfIIC7gBK4PjKzZ2qBwadN",
+    "NILANGA": "https://drive.google.com/uc?export=view&id=1MSbx9SiqwF3opHt-q7eSVjlWr2rtRZV1",
+    "FAISAL": "https://drive.google.com/uc?export=view&id=1NeNOBu5c8p9VUJCkGr6tsP7iWX_hwVEx",
+    "PRASAD": "https://drive.google.com/uc?export=view&id=1Txdp_5iLvh8P0yNyf85RjS1A2O8-_Ne4",
+    "AJITH": "https://drive.google.com/uc?export=view&id=1jTi69419-weUDL8cTtO6E5hmHI2i5PXr",
+    "PIYUSH": "https://drive.google.com/uc?export=view&id=1v8YJFCL0aMlLF-iSycb6Ex7xuDn2cCtW",
+    "IRESHAN": "https://drive.google.com/uc?export=view&id=1SYVXs5AnDbabB3D7oPbhzKFlUzTF4_Ed",
+    "SHANUKA": "https://drive.google.com/uc?export=view&id=1sn9qrqHl_M3lCmI0yvlhhN8N1zQ_BRje",
+    "SHAHID": "https://drive.google.com/uc?export=view&id=132ZiN7225UG3LFZs1LWc7WCO_JDOlx8A",
+    // Add more like:
+    // "SUPUN": "https://drive.google.com/uc?export=view&id=XXXX",
+  };
 
   for (let i = 1; i < data.length; i++) {
-    const timestamp = data[i][0];
-    if (!timestamp) continue;
-    const rowDate = new Date(timestamp);
-    if (rowDate.toDateString() === todayStr) {
-      sheet.getRange(i + 1, 9).clearContent(); // remove image in column I
+    const name = data[i][2]; // Column C (index 2)
+    const currentFormula = sheet.getRange(i + 1, 9).getFormula(); // Column I (index 9)
+
+    if (name in employeeImageMap) {
+      const expectedFormula = `=IMAGE("${employeeImageMap[name]}")`;
+      // Only insert formula if not already set correctly
+      if (currentFormula !== expectedFormula) {
+        sheet.getRange(i + 1, 9).setFormula(expectedFormula);
+      }
+    } else {
+      // Clear image if there's no matching employee
+      sheet.getRange(i + 1, 9).clearContent();
     }
   }
+}
+*/
 }
 
 // PRICE MENU FUNCTIONS
@@ -381,74 +365,6 @@ function onOpen() {
     .addItem("View Price", "viewPrice")
     .addItem("Hide Price", "hidePrice")
     .addToUi();
-}
-
-function emailPerformanceReport() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getActiveSheet();
-
-  // 1. Generate latest report
-  calc();
-
-  // 2. Format the date for subject and file name
-  const today = new Date();
-  const timeZone = Session.getScriptTimeZone();
-  
-  // Full month name for both
-  const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy"); // e.g., August 3, 2025
-  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy")      // e.g., August 3 2025
-    .replace(/ /g, "_"); // Convert spaces to underscores for file name
-
-  // 3. Create PDF export link for the active sheet
-  const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf&` +
-    `size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
-    `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
-
-  const options = {
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
-  };
-
-  // 4. Fetch PDF file
-  const response = UrlFetchApp.fetch(url, options);
-  const blob = response.getBlob().setName(
-    `${fileDate}_Al_Raked_Performance_Report.pdf`
-  );
-
-  // 5. Email the PDF
-  MailApp.sendEmail({
-    to: "alrakedcarwashingstation@gmail.com",
-    subject: `${subjectDate} - Al Raked Performance Report`,
-    body: "Attached is the daily performance report for today.",
-    attachments: [blob]
-  });
-}
-
-function createTriggers() {
-  // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
-  const triggers = ScriptApp.getProjectTriggers();
-  for (const t of triggers) {
-    const funcName = t.getHandlerFunction();
-    if (funcName === "calc" || funcName === "emailPerformanceReport") {
-      ScriptApp.deleteTrigger(t);
-    }
-  }
-
-
-  // Run calc() at 11:30 PM daily (final update before email)
-  ScriptApp.newTrigger("calc")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(30)
-    .everyDays(1)
-    .create();
-
-  // Send email report at 11:45 PM daily
-  ScriptApp.newTrigger("emailPerformanceReport")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(45)
-    .everyDays(1)
-    .create();
 }
 
 function sevenDaySummary() {
@@ -553,14 +469,81 @@ function createSevenDayTrigger() {
     .create();
 }
 
+function emailPerformanceReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+
+  // 1. Generate latest report
+  calc();
+
+  // 2. Format the date for subject and file name
+  const today = new Date();
+  const timeZone = Session.getScriptTimeZone();
+  
+  // Full month name for both
+  const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy"); // e.g., August 3, 2025
+  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy")      // e.g., August 3 2025
+    .replace(/ /g, "_"); // Convert spaces to underscores for file name
+
+  // 3. Create PDF export link for the active sheet
+  const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf&` +
+    `size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+    `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
+
+  const options = {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
+  };
+
+  // 4. Fetch PDF file
+  const response = UrlFetchApp.fetch(url, options);
+  const blob = response.getBlob().setName(
+    `${fileDate}_Al_Raked_Performance_Report.pdf`
+  );
+
+  // 5. Email the PDF
+  MailApp.sendEmail({
+    to: "alrakedcarwashingstation@gmail.com",
+    subject: `${subjectDate} - Al Raked Performance Report`,
+    body: "Attached is the daily performance report for today.",
+    attachments: [blob]
+  });
+}
+
+function createTriggers() {
+  // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    const funcName = t.getHandlerFunction();
+    if (funcName === "calc" || funcName === "emailPerformanceReport") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+
+  // Run calc() at 11:30 PM daily (final update before email)
+  ScriptApp.newTrigger("calc")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(30)
+    .everyDays(1)
+    .create();
+
+  // Send email report at 11:45 PM daily
+  ScriptApp.newTrigger("emailPerformanceReport")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(45)
+    .everyDays(1)
+    .create();
+}
 
 function onFormSubmit(e) {
-  // Step 1: Process sorting and formatting
+  // 1. Process the new response (sorting, images, etc.)
   processFormSubmission();
 
-  // Step 2: Assign image for the new entry
-  assignImageToNewEntry();
-
-  // Step 3: Update the performance report
+  // 2. Update the performance report
   calc();
+
+  // 3. Update 7-day summary immediately
+  sevenDaySummary();
 }
