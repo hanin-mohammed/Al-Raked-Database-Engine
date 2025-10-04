@@ -220,7 +220,7 @@ function calc() {
     formatMoney(empMap[name].monthly),
     empMap[name].carsMonth
   ]);
-  writeTable("EMPLOYEE PERFORMANCE", ["NAME", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], empRows);
+  writeTable("EMPLOYEE PERFORMANCE", ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], empRows);
 
   // Foreman
   const foremanList = Object.keys(foremanMap).sort((a, b) => foremanMap[b].daily - foremanMap[a].daily);
@@ -231,7 +231,7 @@ function calc() {
     formatMoney(foremanMap[name].monthly),
     foremanMap[name].carsMonth
   ]);
-  writeTable("FOREMAN PERFORMANCE", ["NAME", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], foremanRows);
+  writeTable("FOREMAN PERFORMANCE", ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], foremanRows);
 
   // Company
   const compList = Object.keys(companyMap);
@@ -242,13 +242,13 @@ function calc() {
     formatMoney(companyMap[name].monthlyAmt),
     companyMap[name].monthlyCars
   ]);
-  writeTable("COMPANY JOBS", ["COMPANY", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], compRows);
+  writeTable("COMPANY JOBS", ["COMPANY", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], compRows);
 
   // Zeenah
   const zeenahRows = [
     ["Zeena", formatMoney(zeenahTodayAmt), zeenahTodayCars, formatMoney(zeenahMonthAmt), zeenahMonthCars]
   ];
-  writeTable("ZEENA SERVICE", ["SERVICE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], zeenahRows);
+  writeTable("ZEENA SERVICE", ["SERVICE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], zeenahRows);
 
   // Oil Change
   const oilList = Object.keys(oilMap);
@@ -259,7 +259,7 @@ function calc() {
     formatMoney(oilMap[oilType].monthlyAmt),
     oilMap[oilType].monthlyCars
   ]);
-  writeTable("OIL CHANGE", ["OIL TYPE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
+  writeTable("OIL CHANGE", ["OIL TYPE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
 }
 
 // MENU
@@ -367,108 +367,6 @@ function onOpen() {
     .addToUi();
 }
 
-function sevenDaySummary() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const data = sheet.getDataRange().getValues();
-  const today = new Date();
-  const todayStr = today.toDateString();
-
-  // Track 7-day data (excluding today)
-  const dailyExcl = {};
-  const dailyIncl = {};
-
-  // Last 7 dates (excluding today)
-  const last7Dates = [];
-  for (let d = 1; d <= 7; d++) {
-    const past = new Date(today);
-    past.setDate(today.getDate() - d);
-    const key = past.toDateString();
-    last7Dates.push({ key, date: new Date(past) });
-    dailyExcl[key] = { amt: 0, cars: 0 };
-    dailyIncl[key] = { amt: 0, cars: 0 };
-  }
-
-  // Process rows
-  for (let i = 1; i < data.length; i++) {
-    const [timestamp, , , , , price, company] = data[i];
-    if (!timestamp) continue;
-    const rowDate = new Date(timestamp);
-    const rowKey = rowDate.toDateString();
-    if (!dailyIncl[rowKey]) continue;
-
-    let amt = 0;
-    if (price && price.toString().trim().toLowerCase() !== "free") {
-      amt = parseFloat(price) || 0;
-    }
-
-    const isCompanyJob = company && company.toString().trim() !== "";
-
-    // Including company
-    dailyIncl[rowKey].amt += amt;
-    dailyIncl[rowKey].cars++;
-
-    // Excluding company
-    if (!isCompanyJob) {
-      dailyExcl[rowKey].amt += amt;
-      dailyExcl[rowKey].cars++;
-    }
-  }
-
-  // Clear old block
-  sheet.getRange("S4:W200").clearContent().clearFormat();
-  let row = 4;
-
-  const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
-
-  // Header
-  sheet.getRange(row, 19, 1, 5).merge()
-    .setValue("7-DAY SUMMARY")
-    .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans")
-    .setHorizontalAlignment("center");
-  row++;
-
-  // Column headers
-  const headers = [["DATE", "EARNINGS", "CARS", "EARNINGS (COMPANY)", "CARS (COMPANY)"]];
-  sheet.getRange(row, 19, 1, 5).setValues(headers)
-    .setFontWeight("bold").setFontFamily("DM Sans")
-    .setHorizontalAlignment("left");
-  row++;
-
-  // Rows
-  const rows = last7Dates.map(obj => {
-    const dLabel = Utilities.formatDate(obj.date, Session.getScriptTimeZone(), "EEE, dd MMM"); // day added
-    return [
-      dLabel,
-      formatMoney(dailyExcl[obj.key].amt),
-      dailyExcl[obj.key].cars,
-      formatMoney(dailyIncl[obj.key].amt),
-      dailyIncl[obj.key].cars
-    ];
-  });
-
-  const range = sheet.getRange(row, 19, rows.length, 5);
-  range.setValues(rows).setFontFamily("DM Sans");
-  range.setBorder(true, true, true, true, true, true);
-  range.setHorizontalAlignment("right");
-  sheet.getRange(row, 19, rows.length, 1).setHorizontalAlignment("left");
-}
-
-function createSevenDayTrigger() {
-  // Delete old trigger if exists
-  const triggers = ScriptApp.getProjectTriggers();
-  for (const t of triggers) {
-    if (t.getHandlerFunction() === "sevenDaySummary") {
-      ScriptApp.deleteTrigger(t);
-    }
-  }
-  // Run at 1 AM daily
-  ScriptApp.newTrigger("sevenDaySummary")
-    .timeBased()
-    .atHour(1)
-    .everyDays(1)
-    .create();
-}
-
 function emailPerformanceReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
@@ -543,7 +441,4 @@ function onFormSubmit(e) {
 
   // 2. Update the performance report
   calc();
-
-  // 3. Update 7-day summary immediately
-  sevenDaySummary();
 }
