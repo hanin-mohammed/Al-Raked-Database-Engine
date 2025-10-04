@@ -317,7 +317,7 @@ function calc() {
     });
 
     writeTable(
-      "PRIVATE OFFICE VECHICLE LOG",
+      "PRIVATE OFFICE VEHICLE LOG",
       ["DATE", "LICENSE PLATE", "SERVICE", "PRICE", "COMPANY", "DETAIL"],
       enterpriseRows
     );
