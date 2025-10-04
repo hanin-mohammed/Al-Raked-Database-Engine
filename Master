@@ -117,7 +117,9 @@ function calc() {
     // Totals
     const isCouponFreeWash = service === "Coupon [Free Wash]";
 
-    if (isToday) {
+       totalMonthExcl += amt;
+        }
+      }if (isToday) {
       carsTodayIncl++;  // Car always counts
       carsTodayExcl++;  // Car always counts
 
@@ -136,9 +138,7 @@ function calc() {
       if (!isCouponFreeWash) {  // Money does NOT count for overall totals
         totalMonthIncl += amt;
         if (!isCompanyJob) {
-          totalMonthExcl += amt;
-        }
-      }
+       
     }
   }
 
