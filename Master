@@ -173,13 +173,13 @@ function calc() {
     ["Earnings Today", formatMoney(totalTodayExcl)],
     ["Cars Washed Today", carsTodayExcl],
     ["Monthly Earnings", formatMoney(totalMonthExcl)],
-    ["Cars Washed This Month", carsMonthExcl]
+    ["Cars Washed this Month", carsMonthExcl]
   ];
   const summaryDataIncl = [
     ["Earnings Today", formatMoney(totalTodayIncl)],
     ["Cars Washed Today", carsTodayIncl],
     ["Monthly Earnings", formatMoney(totalMonthIncl)],
-    ["Cars Washed This Month", carsMonthIncl]
+    ["Cars Washed this Month", carsMonthIncl]
   ];
 
   // Left table
@@ -228,15 +228,15 @@ function calc() {
     }
   }
 
-  // Top Earner
-  let topEmp = "", topAmt = 0;
+    // Top Performer (by cars washed this month)
+  let topEmp = "", topCars = 0;
   for (let emp in empMap) {
-    if (empMap[emp].monthly > topAmt) {
-      topAmt = empMap[emp].monthly;
+    if (empMap[emp].carsMonth > topCars) {
+      topCars = empMap[emp].carsMonth;
       topEmp = emp;
     }
   }
-  sheet.getRange(currentRow, 12, 1, 5).merge().setValue(`TOP EARNER THIS MONTH: ${topEmp} (${formatMoney(topAmt)})`)
+  sheet.getRange(currentRow, 12, 1, 5).merge().setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
     .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow += 2;
 
