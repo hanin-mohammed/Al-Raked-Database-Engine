@@ -260,7 +260,9 @@ function calc() {
     oilMap[oilType].monthlyCars
   ]);
   writeTable("OIL CHANGE", ["OIL TYPE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
+
 }
+
 
 // MENU
 function onOpen() {
@@ -290,50 +292,64 @@ function processFormSubmission() {
     const targetFormat = sheet.getRange(2, 1, 1, lastCol);
     sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
   }
-/*
-  // 4. Insert images based on employee name in column C into column I (after sorting)
-  const data = sheet.getDataRange().getValues();
-  const employeeImageMap = {
-    "SAMPATH": "https://drive.google.com/uc?export=view&id=15JZo99FEhRPCG4s5Nb6-hCAcs672IJz5",
-    "LAKSHMAN": "https://drive.google.com/uc?export=view&id=16NgrXI6HpGBKWMKVOvWzW5cVdN-hHlNp",
-    "IRAN": "https://drive.google.com/uc?export=view&id=16xopiLHLaUBJyRioJ137gKrx47uxbPBQ",
-    "SUPUN": "https://drive.google.com/uc?export=view&id=186E9cZSMr1bBTD0MUSHj1yABn6ftV3h5",
-    "ROHAN": "https://drive.google.com/uc?export=view&id=19V9dHdahywCsSGzWL8LIlrY5VMsqbEWY",
-    "JEEVANTHA": "https://drive.google.com/uc?export=view&id=1XnThOjivXW7a7-_TJr9Mjotubd2kGw_f",
-    "ASHANGA": "https://drive.google.com/uc?export=view&id=1pmBC-1_uwekzkCDsaK_Fd-nI4DVJ-5Y5",
-    "RAVINDU": "https://drive.google.com/uc?export=view&id=1vbvVHAo3fy1mrioEySOVDIyRQKsATeqL",
-    "BHARATHA": "https://drive.google.com/uc?export=view&id=1whsEc6RIJoBbHO910_aO3bl5KiNWXQTC",
-    "SAJID": "https://drive.google.com/uc?export=view&id=1LoWEr9QVHtO9cysVtMgIN0MVpYAWzMXc",
-    "UDAY": "https://drive.google.com/uc?export=view&id=19phT6Tx7fGCfIIC7gBK4PjKzZ2qBwadN",
-    "NILANGA": "https://drive.google.com/uc?export=view&id=1MSbx9SiqwF3opHt-q7eSVjlWr2rtRZV1",
-    "FAISAL": "https://drive.google.com/uc?export=view&id=1NeNOBu5c8p9VUJCkGr6tsP7iWX_hwVEx",
-    "PRASAD": "https://drive.google.com/uc?export=view&id=1Txdp_5iLvh8P0yNyf85RjS1A2O8-_Ne4",
-    "AJITH": "https://drive.google.com/uc?export=view&id=1jTi69419-weUDL8cTtO6E5hmHI2i5PXr",
-    "PIYUSH": "https://drive.google.com/uc?export=view&id=1v8YJFCL0aMlLF-iSycb6Ex7xuDn2cCtW",
-    "IRESHAN": "https://drive.google.com/uc?export=view&id=1SYVXs5AnDbabB3D7oPbhzKFlUzTF4_Ed",
-    "SHANUKA": "https://drive.google.com/uc?export=view&id=1sn9qrqHl_M3lCmI0yvlhhN8N1zQ_BRje",
-    "SHAHID": "https://drive.google.com/uc?export=view&id=132ZiN7225UG3LFZs1LWc7WCO_JDOlx8A",
-    // Add more like:
-    // "SUPUN": "https://drive.google.com/uc?export=view&id=XXXX",
-  };
 
-  for (let i = 1; i < data.length; i++) {
-    const name = data[i][2]; // Column C (index 2)
-    const currentFormula = sheet.getRange(i + 1, 9).getFormula(); // Column I (index 9)
 
-    if (name in employeeImageMap) {
-      const expectedFormula = `=IMAGE("${employeeImageMap[name]}")`;
-      // Only insert formula if not already set correctly
-      if (currentFormula !== expectedFormula) {
-        sheet.getRange(i + 1, 9).setFormula(expectedFormula);
-      }
-    } else {
-      // Clear image if there's no matching employee
-      sheet.getRange(i + 1, 9).clearContent();
-    }
+}
+
+// EMPLOYEE IMAGES
+const employeeImageMap = {
+  "SAMPATH": "https://drive.google.com/uc?export=view&id=15JZo99FEhRPCG4s5Nb6-hCAcs672IJz5",
+  "LAKSHMAN": "https://drive.google.com/uc?export=view&id=16NgrXI6HpGBKWMKVOvWzW5cVdN-hHlNp",
+  "IRAN": "https://drive.google.com/uc?export=view&id=16xopiLHLaUBJyRioJ137gKrx47uxbPBQ",
+  "SUPUN": "https://drive.google.com/uc?export=view&id=186E9cZSMr1bBTD0MUSHj1yABn6ftV3h5",
+  "ROHAN": "https://drive.google.com/uc?export=view&id=19V9dHdahywCsSGzWL8LIlrY5VMsqbEWY",
+  "JEEVANTHA": "https://drive.google.com/uc?export=view&id=1XnThOjivXW7a7-_TJr9Mjotubd2kGw_f",
+  "ASHANGA": "https://drive.google.com/uc?export=view&id=1pmBC-1_uwekzkCDsaK_Fd-nI4DVJ-5Y5",
+  "RAVINDU": "https://drive.google.com/uc?export=view&id=1vbvVHAo3fy1mrioEySOVDIyRQKsATeqL",
+  "BHARATHA": "https://drive.google.com/uc?export=view&id=1whsEc6RIJoBbHO910_aO3bl5KiNWXQTC",
+  "SAJID": "https://drive.google.com/uc?export=view&id=1LoWEr9QVHtO9cysVtMgIN0MVpYAWzMXc",
+  "UDAY": "https://drive.google.com/uc?export=view&id=19phT6Tx7fGCfIIC7gBK4PjKzZ2qBwadN",
+  "NILANGA": "https://drive.google.com/uc?export=view&id=1MSbx9SiqwF3opHt-q7eSVjlWr2rtRZV1",
+  "FAISAL": "https://drive.google.com/uc?export=view&id=1NeNOBu5c8p9VUJCkGr6tsP7iWX_hwVEx",
+  "PRASAD": "https://drive.google.com/uc?export=view&id=1Txdp_5iLvh8P0yNyf85RjS1A2O8-_Ne4",
+  "AJITH": "https://drive.google.com/uc?export=view&id=1jTi69419-weUDL8cTtO6E5hmHI2i5PXr",
+  "PIYUSH": "https://drive.google.com/uc?export=view&id=1v8YJFCL0aMlLF-iSycb6Ex7xuDn2cCtW",
+  "IRESHAN": "https://drive.google.com/uc?export=view&id=1SYVXs5AnDbabB3D7oPbhzKFlUzTF4_Ed",
+  "SHANUKA": "https://drive.google.com/uc?export=view&id=1sn9qrqHl_M3lCmI0yvlhhN8N1zQ_BRje",
+  "SHAHID": "https://drive.google.com/uc?export=view&id=132ZiN7225UG3LFZs1LWc7WCO_JDOlx8A"
+};
+
+// Run on each new form submission
+function assignImageToNewEntry() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) return; // no data
+  const name = sheet.getRange(lastRow, 3).getValue().toString().trim().toUpperCase(); // column C = employee
+  const cell = sheet.getRange(lastRow, 9); // column I
+
+  if (employeeImageMap[name]) {
+    const formula = `=IMAGE("${employeeImageMap[name]}")`;
+    cell.setFormula(formula);
+  } else {
+    cell.clearContent();
   }
 }
-*/
+
+// Run daily at 11 PM to clear today's images
+function clearTodayImages() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const data = sheet.getDataRange().getValues();
+  const todayStr = new Date().toDateString();
+
+  for (let i = 1; i < data.length; i++) {
+    const timestamp = data[i][0];
+    if (!timestamp) continue;
+    const rowDate = new Date(timestamp);
+    if (rowDate.toDateString() === todayStr) {
+      sheet.getRange(i + 1, 9).clearContent(); // remove image in column I
+    }
+  }
 }
 
 // PRICE MENU FUNCTIONS
@@ -435,10 +451,104 @@ function createTriggers() {
     .create();
 }
 
-function onFormSubmit(e) {
-  // 1. Process the new response (sorting, images, etc.)
-  processFormSubmission();
+function sevenDaySummary() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const data = sheet.getDataRange().getValues();
+  const today = new Date();
+  const todayStr = today.toDateString();
 
-  // 2. Update the performance report
-  calc();
+  // Track 7-day data (excluding today)
+  const dailyExcl = {};
+  const dailyIncl = {};
+
+  // Last 7 dates (excluding today)
+  const last7Dates = [];
+  for (let d = 1; d <= 7; d++) {
+    const past = new Date(today);
+    past.setDate(today.getDate() - d);
+    const key = past.toDateString();
+    last7Dates.push({ key, date: new Date(past) });
+    dailyExcl[key] = { amt: 0, cars: 0 };
+    dailyIncl[key] = { amt: 0, cars: 0 };
+  }
+
+  // Process rows
+  for (let i = 1; i < data.length; i++) {
+    const [timestamp, , , , , price, company] = data[i];
+    if (!timestamp) continue;
+    const rowDate = new Date(timestamp);
+    const rowKey = rowDate.toDateString();
+    if (!dailyIncl[rowKey]) continue;
+
+    let amt = 0;
+    if (price && price.toString().trim().toLowerCase() !== "free") {
+      amt = parseFloat(price) || 0;
+    }
+
+    const isCompanyJob = company && company.toString().trim() !== "";
+
+    // Including company
+    dailyIncl[rowKey].amt += amt;
+    dailyIncl[rowKey].cars++;
+
+    // Excluding company
+    if (!isCompanyJob) {
+      dailyExcl[rowKey].amt += amt;
+      dailyExcl[rowKey].cars++;
+    }
+  }
+
+  // Clear old block
+  sheet.getRange("R1:V200").clearContent().clearFormat();
+  let row = 1;
+
+  const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
+
+  // Header
+  sheet.getRange(row, 18, 1, 5).merge()
+    .setValue("7-DAY SUMMARY")
+    .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans")
+    .setHorizontalAlignment("center");
+  row++;
+
+  // Column headers
+  const headers = [["DATE", "EARNINGS", "CARS", "EARNINGS (COMPANY)", "CARS (COMPANY)"]];
+  sheet.getRange(row, 18, 1, 5).setValues(headers)
+    .setFontWeight("bold").setFontFamily("DM Sans")
+    .setHorizontalAlignment("left");
+  row++;
+
+  // Rows
+  const rows = last7Dates.map(obj => {
+  const dLabel = Utilities.formatDate(obj.date, Session.getScriptTimeZone(), "EEE, dd MMM"); // <-- day added
+  return [
+    dLabel,
+    formatMoney(dailyExcl[obj.key].amt),
+    dailyExcl[obj.key].cars,
+    formatMoney(dailyIncl[obj.key].amt),
+    dailyIncl[obj.key].cars
+  ];
+});
+
+  const range = sheet.getRange(row, 18, rows.length, 5);
+  range.setValues(rows).setFontFamily("DM Sans");
+  range.setBorder(true, true, true, true, true, true);
+  range.setHorizontalAlignment("right");
+  sheet.getRange(row, 18, rows.length, 1).setHorizontalAlignment("left");
+}
+
+function createSevenDayTrigger() {
+  // Delete old trigger if exists
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === "sevenDaySummary") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+  // Run at 1 AM daily
+  ScriptApp.newTrigger("sevenDaySummary")
+    .timeBased()
+    .atHour(1)
+    .everyDays(1)
+    .create();
 }
