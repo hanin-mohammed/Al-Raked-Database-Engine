@@ -371,7 +371,16 @@ function emailPerformanceReport() {
   // 1. Generate latest report
   calc();
 
-  // 2. Create PDF export link for the active sheet
+  // 2. Format the date for subject and file name
+  const today = new Date();
+  const timeZone = Session.getScriptTimeZone();
+  
+  // Full month name for both
+  const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy"); // e.g., August 3, 2025
+  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy")      // e.g., August 3 2025
+    .replace(/ /g, "_"); // Convert spaces to underscores for file name
+
+  // 3. Create PDF export link for the active sheet
   const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf&` +
     `size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
     `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
@@ -380,16 +389,16 @@ function emailPerformanceReport() {
     headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
   };
 
-  // 3. Fetch PDF file
+  // 4. Fetch PDF file
   const response = UrlFetchApp.fetch(url, options);
   const blob = response.getBlob().setName(
-    `Performance_Report_${Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd")}.pdf`
+    `${fileDate}_Al_Raked_Performance_Report.pdf`
   );
 
-  // 4. Email the PDF
+  // 5. Email the PDF
   MailApp.sendEmail({
-    to: "alrakedcarwashingstation@gmail.com", // change to your test email if needed
-    subject: "Daily Performance Report",
+    to: "alrakedcarwashingstation@gmail.com",
+    subject: `${subjectDate} - Al Raked Performance Report`,
     body: "Attached is the daily performance report for today.",
     attachments: [blob]
   });
