@@ -290,7 +290,7 @@ function processFormSubmission() {
     const targetFormat = sheet.getRange(2, 1, 1, lastCol);
     sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
   }
-
+/*
   // 4. Insert images based on employee name in column C into column I (after sorting)
   const data = sheet.getDataRange().getValues();
   const employeeImageMap = {
@@ -332,6 +332,8 @@ function processFormSubmission() {
       sheet.getRange(i + 1, 9).clearContent();
     }
   }
+}
+*/
 }
 
 // PRICE MENU FUNCTIONS
