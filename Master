@@ -1,0 +1,422 @@
+function calc() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const data = sheet.getDataRange().getValues();
+  const today = new Date();
+  const todayStr = today.toDateString();
+  const month = today.getMonth();
+  const year = today.getFullYear();
+
+  const empMap = {};
+  const foremanMap = {};
+  const companyMap = {}; 
+  const oilMap = {}; 
+  let totalTodayIncl = 0, totalMonthIncl = 0;
+  let totalTodayExcl = 0, totalMonthExcl = 0;
+  let carsTodayIncl = 0, carsMonthIncl = 0;
+  let carsTodayExcl = 0, carsMonthExcl = 0;
+  let zeenahTodayCars = 0, zeenahMonthCars = 0;
+  let zeenahTodayAmt = 0, zeenahMonthAmt = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const [timestamp, foreman, employee, , service, price, company, oilChange] = data[i];
+    const date = new Date(timestamp);
+    const amt = parseFloat(price) || 0;
+
+    const empName = (employee || "").toString().trim() || "Unknown";
+    const foremanName = (foreman || "").toString().trim() || "Unknown";
+    const isToday = date.toDateString() === todayStr;
+    const isThisMonth = date.getMonth() === month && date.getFullYear() === year;
+    const isCompanyJob = company && company.toString().trim() !== "";
+
+    if (!empMap[empName]) empMap[empName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+    if (!foremanMap[foremanName]) foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+
+    // Zeenah
+    if (service === "Zeenah") {
+      if (isToday) {
+        zeenahTodayCars++;
+        zeenahTodayAmt += amt;
+      }
+      if (isThisMonth) {
+        zeenahMonthCars++;
+        zeenahMonthAmt += amt;
+      }
+    }
+
+    // Company
+    if (isCompanyJob) {
+      if (!companyMap[company]) companyMap[company] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (isToday) {
+        companyMap[company].dailyAmt += amt;
+        companyMap[company].dailyCars++;
+      }
+      if (isThisMonth) {
+        companyMap[company].monthlyAmt += amt;
+        companyMap[company].monthlyCars++;
+      }
+    }
+
+    // Oil
+    if (oilChange && oilChange.toString().trim() !== "") {
+      if (!oilMap[oilChange]) oilMap[oilChange] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (isToday) {
+        oilMap[oilChange].dailyAmt += amt;
+        oilMap[oilChange].dailyCars++;
+      }
+      if (isThisMonth) {
+        oilMap[oilChange].monthlyAmt += amt;
+        oilMap[oilChange].monthlyCars++;
+      }
+    }
+
+    // Employee (include all)
+    if (isToday) {
+      empMap[empName].daily += amt;
+      empMap[empName].carsToday++;
+    }
+    if (isThisMonth) {
+      empMap[empName].monthly += amt;
+      empMap[empName].carsMonth++;
+    }
+
+    // Foreman (exclude company)
+    if (!isCompanyJob) {
+      if (isToday) {
+        foremanMap[foremanName].daily += amt;
+        foremanMap[foremanName].carsToday++;
+      }
+      if (isThisMonth) {
+        foremanMap[foremanName].monthly += amt;
+        foremanMap[foremanName].carsMonth++;
+      }
+    }
+
+    // Totals
+    if (isToday) {
+      totalTodayIncl += amt;
+      carsTodayIncl++;
+      if (!isCompanyJob) {
+        totalTodayExcl += amt;
+        carsTodayExcl++;
+      }
+    }
+    if (isThisMonth) {
+      totalMonthIncl += amt;
+      carsMonthIncl++;
+      if (!isCompanyJob) {
+        totalMonthExcl += amt;
+        carsMonthExcl++;
+      }
+    }
+  }
+
+  // Clear output
+  sheet.getRange("L1:R200").clearContent().clearFormat();
+
+  const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
+  let currentRow = 1;
+
+  // HEADER
+  sheet.getRange(currentRow, 12, 1, 5).merge().setValue("EARNINGS REPORT")
+    .setFontWeight("bold").setFontSize(14).setFontFamily("DM Sans").setHorizontalAlignment("center");
+  currentRow++;
+  sheet.getRange(currentRow, 12, 1, 5).merge()
+    .setValue("Last Updated: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy HH:mm:ss"))
+    .setFontSize(10).setFontFamily("DM Sans").setHorizontalAlignment("center");
+  currentRow += 2;
+
+  // SUMMARY HEADING
+  sheet.getRange(currentRow, 12, 1, 5).merge().setValue("DAILY & MONTHLY SUMMARY")
+    .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans").setHorizontalAlignment("center");
+  currentRow++;
+
+  // Subheadings for two distinct tables
+  sheet.getRange(currentRow, 12, 1, 2).merge().setValue("EXCLUDING COMPANY")
+    .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
+  sheet.getRange(currentRow, 15, 1, 2).merge().setValue("INCLUDING COMPANY")
+    .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
+  currentRow++;
+
+  const summaryDataExcl = [
+    ["Earnings Today", formatMoney(totalTodayExcl)],
+    ["Cars Washed Today", carsTodayExcl],
+    ["Monthly Earnings", formatMoney(totalMonthExcl)],
+    ["Cars Washed This Month", carsMonthExcl]
+  ];
+  const summaryDataIncl = [
+    ["Earnings Today", formatMoney(totalTodayIncl)],
+    ["Cars Washed Today", carsTodayIncl],
+    ["Monthly Earnings", formatMoney(totalMonthIncl)],
+    ["Cars Washed This Month", carsMonthIncl]
+  ];
+
+  // Left table
+  const exclRange = sheet.getRange(currentRow, 12, summaryDataExcl.length, 2);
+  exclRange.setValues(summaryDataExcl).setFontFamily("DM Sans");
+  exclRange.setBorder(true, true, true, true, true, true);
+  exclRange.setHorizontalAlignment("right");
+  sheet.getRange(currentRow, 12, summaryDataExcl.length, 1).setHorizontalAlignment("left");
+
+  // Right table
+  const inclRange = sheet.getRange(currentRow, 15, summaryDataIncl.length, 2);
+  inclRange.setValues(summaryDataIncl).setFontFamily("DM Sans");
+  inclRange.setBorder(true, true, true, true, true, true);
+  inclRange.setHorizontalAlignment("right");
+  sheet.getRange(currentRow, 15, summaryDataIncl.length, 1).setHorizontalAlignment("left");
+
+  currentRow += summaryDataExcl.length + 2;
+
+  // Generic table function
+  function writeTable(title, headers, rows, leftAlignCols = [0]) {
+    sheet.getRange(currentRow, 12, 1, headers.length).merge().setValue(title)
+      .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans").setHorizontalAlignment("center");
+    currentRow++;
+    sheet.getRange(currentRow, 12, 1, headers.length).setValues([headers])
+      .setFontWeight("bold").setFontFamily("DM Sans");
+    currentRow++;
+    if (rows.length) {
+      const range = sheet.getRange(currentRow, 12, rows.length, headers.length);
+      range.setValues(rows).setFontFamily("DM Sans");
+      range.setBorder(true, true, true, true, true, true);
+
+      // Alignment
+      range.setHorizontalAlignment("right");
+      leftAlignCols.forEach(c => sheet.getRange(currentRow, 12 + c, rows.length, 1).setHorizontalAlignment("left"));
+
+      currentRow += rows.length + 2;
+    } else {
+      currentRow += 2;
+    }
+  }
+
+  // Top Earner
+  let topEmp = "", topAmt = 0;
+  for (let emp in empMap) {
+    if (empMap[emp].monthly > topAmt) {
+      topAmt = empMap[emp].monthly;
+      topEmp = emp;
+    }
+  }
+  sheet.getRange(currentRow, 12, 1, 5).merge().setValue(`TOP EARNER THIS MONTH: ${topEmp} (${formatMoney(topAmt)})`)
+    .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
+  currentRow += 2;
+
+  // Employee
+  const empList = Object.keys(empMap).sort((a, b) => empMap[b].daily - empMap[a].daily);
+  const empRows = empList.map(name => [
+    name,
+    formatMoney(empMap[name].daily),
+    empMap[name].carsToday,
+    formatMoney(empMap[name].monthly),
+    empMap[name].carsMonth
+  ]);
+  writeTable("EMPLOYEE PERFORMANCE", ["NAME", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], empRows);
+
+  // Foreman
+  const foremanList = Object.keys(foremanMap).sort((a, b) => foremanMap[b].daily - foremanMap[a].daily);
+  const foremanRows = foremanList.map(name => [
+    name,
+    formatMoney(foremanMap[name].daily),
+    foremanMap[name].carsToday,
+    formatMoney(foremanMap[name].monthly),
+    foremanMap[name].carsMonth
+  ]);
+  writeTable("FOREMAN PERFORMANCE", ["NAME", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], foremanRows);
+
+  // Company
+  const compList = Object.keys(companyMap);
+  const compRows = compList.map(name => [
+    name,
+    formatMoney(companyMap[name].dailyAmt),
+    companyMap[name].dailyCars,
+    formatMoney(companyMap[name].monthlyAmt),
+    companyMap[name].monthlyCars
+  ]);
+  writeTable("COMPANY JOBS", ["COMPANY", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], compRows);
+
+  // Zeenah
+  const zeenahRows = [
+    ["Zeenah", formatMoney(zeenahTodayAmt), zeenahTodayCars, formatMoney(zeenahMonthAmt), zeenahMonthCars]
+  ];
+  writeTable("ZEENAH SERVICE", ["SERVICE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], zeenahRows);
+
+  // Oil Change
+  const oilList = Object.keys(oilMap);
+  const oilRows = oilList.map(oilType => [
+    oilType,
+    formatMoney(oilMap[oilType].dailyAmt),
+    oilMap[oilType].dailyCars,
+    formatMoney(oilMap[oilType].monthlyAmt),
+    oilMap[oilType].monthlyCars
+  ]);
+  writeTable("OIL CHANGE", ["OIL TYPE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
+}
+
+// MENU
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Al Raked")
+    .addItem("Performance Report", "calc")
+    .addToUi();
+}
+
+function processFormSubmission() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1"); // change if needed
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  // 1. Unmerge everything to prevent sort errors
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
+
+  // 2. Sort by Timestamp (Column A) descending — newest entries first
+  if (lastRow > 1) {
+    const sortRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+    sortRange.sort({ column: 1, ascending: false });
+  }
+
+  // 3. Copy formatting from row 3 (previous top) to row 2 (newest entry)
+  if (lastRow >= 3) {
+    const sourceFormat = sheet.getRange(3, 1, 1, lastCol);
+    const targetFormat = sheet.getRange(2, 1, 1, lastCol);
+    sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
+  }
+
+  // 4. Insert images based on employee name in column C into column I (after sorting)
+  const data = sheet.getDataRange().getValues();
+  const employeeImageMap = {
+    "SAMPATH": "https://drive.google.com/uc?export=view&id=15JZo99FEhRPCG4s5Nb6-hCAcs672IJz5",
+    "LAKSHMAN": "https://drive.google.com/uc?export=view&id=16NgrXI6HpGBKWMKVOvWzW5cVdN-hHlNp",
+    "IRAN": "https://drive.google.com/uc?export=view&id=16xopiLHLaUBJyRioJ137gKrx47uxbPBQ",
+    "SUPUN": "https://drive.google.com/uc?export=view&id=186E9cZSMr1bBTD0MUSHj1yABn6ftV3h5",
+    "ROHAN": "https://drive.google.com/uc?export=view&id=19V9dHdahywCsSGzWL8LIlrY5VMsqbEWY",
+    "JEEVANTHA": "https://drive.google.com/uc?export=view&id=1XnThOjivXW7a7-_TJr9Mjotubd2kGw_f",
+    "ASHANGA": "https://drive.google.com/uc?export=view&id=1pmBC-1_uwekzkCDsaK_Fd-nI4DVJ-5Y5",
+    "RAVINDU": "https://drive.google.com/uc?export=view&id=1vbvVHAo3fy1mrioEySOVDIyRQKsATeqL",
+    "BHARATHA": "https://drive.google.com/uc?export=view&id=1whsEc6RIJoBbHO910_aO3bl5KiNWXQTC",
+    "SAJID": "https://drive.google.com/uc?export=view&id=1LoWEr9QVHtO9cysVtMgIN0MVpYAWzMXc",
+    "UDAY": "https://drive.google.com/uc?export=view&id=19phT6Tx7fGCfIIC7gBK4PjKzZ2qBwadN",
+    "NILANGA": "https://drive.google.com/uc?export=view&id=1MSbx9SiqwF3opHt-q7eSVjlWr2rtRZV1",
+    "FAISAL": "https://drive.google.com/uc?export=view&id=1NeNOBu5c8p9VUJCkGr6tsP7iWX_hwVEx",
+    "PRASAD": "https://drive.google.com/uc?export=view&id=1Txdp_5iLvh8P0yNyf85RjS1A2O8-_Ne4",
+    "AJITH": "https://drive.google.com/uc?export=view&id=1jTi69419-weUDL8cTtO6E5hmHI2i5PXr",
+    "PIYUSH": "https://drive.google.com/uc?export=view&id=1v8YJFCL0aMlLF-iSycb6Ex7xuDn2cCtW",
+    "IRESHAN": "https://drive.google.com/uc?export=view&id=1SYVXs5AnDbabB3D7oPbhzKFlUzTF4_Ed",
+    "SHANUKA": "https://drive.google.com/uc?export=view&id=1sn9qrqHl_M3lCmI0yvlhhN8N1zQ_BRje",
+    // Add more like:
+    // "SUPUN": "https://drive.google.com/uc?export=view&id=XXXX",
+  };
+
+  for (let i = 1; i < data.length; i++) {
+    const name = data[i][2]; // Column C (index 2)
+    const currentFormula = sheet.getRange(i + 1, 9).getFormula(); // Column I (index 9)
+
+    if (name in employeeImageMap) {
+      const expectedFormula = `=IMAGE("${employeeImageMap[name]}")`;
+      // Only insert formula if not already set correctly
+      if (currentFormula !== expectedFormula) {
+        sheet.getRange(i + 1, 9).setFormula(expectedFormula);
+      }
+    } else {
+      // Clear image if there's no matching employee
+      sheet.getRange(i + 1, 9).clearContent();
+    }
+  }
+}
+
+// PRICE MENU FUNCTIONS
+function viewPrice() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return; // No data
+  sheet.getRange(2, 6, lastRow - 1, 1).setFontColor("black"); // Column F
+}
+
+function hidePrice() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return; // No data
+  sheet.getRange(2, 6, lastRow - 1, 1).setFontColor("white"); // Column F
+}
+
+// ADD PRICE MENU TO SPREADSHEET
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  
+  // Existing Al Raked Menu
+  ui.createMenu("Al Raked")
+    .addItem("Performance Report", "calc")
+    .addToUi();
+    
+  // New Price Menu
+  ui.createMenu("Price")
+    .addItem("View Price", "viewPrice")
+    .addItem("Hide Price", "hidePrice")
+    .addToUi();
+}
+
+function createDailyTrigger() {
+  // First, delete any existing triggers to avoid duplicates
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "calc") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  // Create a new time-driven trigger to run calc() daily at 11 PM
+  ScriptApp.newTrigger("calc")
+    .timeBased()
+    .atHour(23) // 23 = 11 PM
+    .everyDays(1)
+    .create();
+}
+
+function emailPerformanceReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+
+  // 1. Generate latest report
+  calc();
+
+  // 2. Create PDF export link for the active sheet
+  const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf&` +
+    `size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+    `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
+
+  const options = {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
+  };
+
+  // 3. Fetch PDF file
+  const response = UrlFetchApp.fetch(url, options);
+  const blob = response.getBlob().setName(
+    `Performance_Report_${Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd")}.pdf`
+  );
+
+  // 4. Email the PDF
+  MailApp.sendEmail({
+    to: "alrakedcarwashingstation@gmail.com",
+    subject: "Daily Performance Report",
+    body: "Attached is the daily performance report for today.",
+    attachments: [blob]
+  });
+}
+
+// Create a trigger to email report every day at 11:30 PM
+function createDailyEmailTrigger() {
+  // Remove any existing triggers for this function
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let t of triggers) {
+    if (t.getHandlerFunction() === "emailPerformanceReport") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  // Run at 11:30 PM daily
+  ScriptApp.newTrigger("emailPerformanceReport")
+    .timeBased()
+    .atHour(23)      // 11 PM
+    .nearMinute(30)  // 30 minutes past
+    .everyDays(1)
+    .create();
+}
