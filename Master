@@ -115,7 +115,7 @@ function calc() {
     }
 
     // Totals
-    const isCouponFreeWash = service === "Coupon [Free Wash]";
+    const isCouponFreeWash = service === "Coupon [Free Wash]" || service === "4+1 Free Wash";
 
     if (isToday) {
       if (isCompanyJob) {
