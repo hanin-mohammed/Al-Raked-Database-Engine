@@ -302,6 +302,10 @@ function calc() {
   ]);
   writeTable("OIL CHANGE", ["OIL TYPE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
   
+  if (oilRows.length) {
+    sheet.getRange(currentRow - oilRows.length - 2, 12, oilRows.length, 1).setWrap(true);
+  }
+
   // Enterprise Jobs
   if (enterpriseJobs && enterpriseJobs.length) {
     const enterpriseRows = enterpriseJobs.map(row => {
@@ -332,6 +336,7 @@ function calc() {
       else if (c === 3) colRange.setHorizontalAlignment("right"); // Price
       else colRange.setHorizontalAlignment("left"); // Rest
     }
+    sheet.getRange(startRow, 17, enterpriseRows.length, 1).setWrap(true); // Column Q
   }
 
 
