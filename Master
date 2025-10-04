@@ -26,7 +26,10 @@ function calc() {
       amt = parseFloat(price) || 0;
     }
 
-    if (companyDetail && companyDetail.toString().trim() !== "") {
+    if (
+      (companyDetail && companyDetail.toString().trim() !== "") || 
+      (company && company.toString().trim() === "Private Office")
+    ) {
       enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, price, company, oilChange, companyDetail]);
     }
 
@@ -302,7 +305,7 @@ function calc() {
     });
 
     writeTable(
-      "ENTERPRISE JOBS",
+      "PRIVATE OFFICE VECHICLE LOG",
       ["DATE", "LICENSE PLATE", "SERVICE", "PRICE", "COMPANY", "DETAIL"],
       enterpriseRows
     );
