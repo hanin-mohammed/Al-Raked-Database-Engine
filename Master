@@ -436,22 +436,12 @@ function createTriggers() {
 }
 
 function onFormSubmit(e) {
-  const lock = LockService.getScriptLock();
-  
-  // Wait up to 30 seconds for any other process to finish
-  lock.waitLock(30000);
+  // 1. Process the new response (sorting, unmerging, etc.)
+  processFormSubmission();
 
-  try {
-    // 1. Process the new response (sorting, formatting, etc.)
-    processFormSubmission();
+  // 2. Wait 10 seconds for Google Sheets to finish updating
+  Utilities.sleep(10000);
 
-    // 2. Ensure all pending spreadsheet changes are applied
-    SpreadsheetApp.flush();
-
-    // 3. Run the performance calculation and formatting
-    calc();
-  } finally {
-    // Release the lock so another submission can proceed
-    lock.releaseLock();
-  }
+  // 3. Update the performance report
+  calc();
 }
