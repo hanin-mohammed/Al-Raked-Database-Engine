@@ -436,9 +436,22 @@ function createTriggers() {
 }
 
 function onFormSubmit(e) {
-  // 1. Process the new response (sorting, images, etc.)
-  processFormSubmission();
+  const lock = LockService.getScriptLock();
+  
+  // Wait up to 30 seconds for any other process to finish
+  lock.waitLock(30000);
 
-  // 2. Update the performance report
-  calc();
+  try {
+    // 1. Process the new response (sorting, formatting, etc.)
+    processFormSubmission();
+
+    // 2. Ensure all pending spreadsheet changes are applied
+    SpreadsheetApp.flush();
+
+    // 3. Run the performance calculation and formatting
+    calc();
+  } finally {
+    // Release the lock so another submission can proceed
+    lock.releaseLock();
+  }
 }
