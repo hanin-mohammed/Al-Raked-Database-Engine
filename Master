@@ -20,10 +20,20 @@ function calc() {
   for (let i = 1; i < data.length; i++) {
     const [timestamp, foreman, employee, , service, price, company, oilChange] = data[i];
     const date = new Date(timestamp);
-    const amt = parseFloat(price) || 0;
+    let amt = 0;
+    if (price && price.toString().trim().toLowerCase() !== "free") {
+      amt = parseFloat(price) || 0;
+    }
 
-    const empName = (employee || "").toString().trim() || "Unknown";
-    const foremanName = (foreman || "").toString().trim() || "Unknown";
+    // Skip blank rows completely
+    if (!timestamp) continue;
+
+    const empName = (employee || "").toString().trim();
+    const foremanName = (foreman || "").toString().trim();
+
+    // Skip any row with missing names (prevents "Unknown")
+    if (!empName || !foremanName) continue;
+
     const isToday = date.toDateString() === todayStr;
     const isThisMonth = date.getMonth() === month && date.getFullYear() === year;
     const isCompanyJob = company && company.toString().trim() !== "";
@@ -32,7 +42,7 @@ function calc() {
     if (!foremanMap[foremanName]) foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
 
     // Zeenah
-    if (service === "Zeenah") {
+    if (service === "Zeena") {
       if (isToday) {
         zeenahTodayCars++;
         zeenahTodayAmt += amt;
@@ -236,9 +246,9 @@ function calc() {
 
   // Zeenah
   const zeenahRows = [
-    ["Zeenah", formatMoney(zeenahTodayAmt), zeenahTodayCars, formatMoney(zeenahMonthAmt), zeenahMonthCars]
+    ["Zeena", formatMoney(zeenahTodayAmt), zeenahTodayCars, formatMoney(zeenahMonthAmt), zeenahMonthCars]
   ];
-  writeTable("ZEENAH SERVICE", ["SERVICE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], zeenahRows);
+  writeTable("ZEENA SERVICE", ["SERVICE", "AMOUNT TODAY", "CARS TODAY", "AMOUNT THIS MONTH", "CARS THIS MONTH"], zeenahRows);
 
   // Oil Change
   const oilList = Object.keys(oilMap);
@@ -354,23 +364,6 @@ function onOpen() {
     .addToUi();
 }
 
-function createDailyTrigger() {
-  // First, delete any existing triggers to avoid duplicates
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === "calc") {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-
-  // Create a new time-driven trigger to run calc() daily at 11 PM
-  ScriptApp.newTrigger("calc")
-    .timeBased()
-    .atHour(23) // 23 = 11 PM
-    .everyDays(1)
-    .create();
-}
-
 function emailPerformanceReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
@@ -395,28 +388,45 @@ function emailPerformanceReport() {
 
   // 4. Email the PDF
   MailApp.sendEmail({
-    to: "alrakedcarwashingstation@gmail.com",
+    to: "alrakedcarwashingstation@gmail.com", // change to your test email if needed
     subject: "Daily Performance Report",
     body: "Attached is the daily performance report for today.",
     attachments: [blob]
   });
 }
 
-// Create a trigger to email report every day at 11:30 PM
-function createDailyEmailTrigger() {
-  // Remove any existing triggers for this function
+function createTriggers() {
+  // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
-  for (let t of triggers) {
-    if (t.getHandlerFunction() === "emailPerformanceReport") {
+  for (const t of triggers) {
+    const funcName = t.getHandlerFunction();
+    if (funcName === "calc" || funcName === "emailPerformanceReport") {
       ScriptApp.deleteTrigger(t);
     }
   }
 
-  // Run at 11:30 PM daily
-  ScriptApp.newTrigger("emailPerformanceReport")
+
+  // Run calc() at 11:30 PM daily (final update before email)
+  ScriptApp.newTrigger("calc")
     .timeBased()
-    .atHour(23)      // 11 PM
-    .nearMinute(30)  // 30 minutes past
+    .atHour(23)
+    .nearMinute(30)
     .everyDays(1)
     .create();
+
+  // Send email report at 11:45 PM daily
+  ScriptApp.newTrigger("emailPerformanceReport")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(45)
+    .everyDays(1)
+    .create();
+}
+
+function onFormSubmit(e) {
+  // 1. Process the new response (sorting, images, etc.)
+  processFormSubmission();
+
+  // 2. Update the performance report
+  calc();
 }
