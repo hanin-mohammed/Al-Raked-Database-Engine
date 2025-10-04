@@ -16,13 +16,18 @@ function calc() {
   let carsTodayExcl = 0, carsMonthExcl = 0;
   let zeenahTodayCars = 0, zeenahMonthCars = 0;
   let zeenahTodayAmt = 0, zeenahMonthAmt = 0;
+  let enterpriseJobs = [];
 
   for (let i = 1; i < data.length; i++) {
-    const [timestamp, foreman, employee, , service, price, company, oilChange] = data[i];
+    const [timestamp, foreman, employee, licensePlate, service, price, company, oilChange, companyDetail] = data[i];
     const date = new Date(timestamp);
     let amt = 0;
     if (price && price.toString().trim().toLowerCase() !== "free") {
       amt = parseFloat(price) || 0;
+    }
+
+    if (companyDetail && companyDetail.toString().trim() !== "") {
+      enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, price, company, oilChange, companyDetail]);
     }
 
     // Skip blank rows completely
@@ -285,6 +290,41 @@ function calc() {
     oilMap[oilType].monthlyCars
   ]);
   writeTable("OIL CHANGE", ["OIL TYPE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
+  
+  // Enterprise Jobs
+  if (enterpriseJobs && enterpriseJobs.length) {
+    const enterpriseRows = enterpriseJobs.map(row => {
+      const date = row[0] ? Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), "dd/MM/yy") : "";
+      const price = parseFloat(row[5]) || 0;
+      const formattedPrice = `${price.toLocaleString("en-US")} AED`;
+      return [date, row[3], row[4], formattedPrice, row[6], row[8]]; 
+      // columns: Date, License Plate, Service, Price, Company, Detail
+    });
+
+    writeTable(
+      "ENTERPRISE JOBS",
+      ["DATE", "LICENSE PLATE", "SERVICE", "PRICE", "COMPANY", "DETAIL"],
+      enterpriseRows
+    );
+
+    // Adjust alignment and bold manually after writing
+    const startRow = currentRow - enterpriseRows.length - 2; // writeTable moves currentRow
+    const sheetRange = sheet.getRange(startRow, 12, enterpriseRows.length, 6);
+
+    // Bold all
+    sheetRange.setFontWeight("bold");
+
+    // Alignment
+    for (let c = 0; c < 6; c++) {
+      const colRange = sheet.getRange(startRow, 12 + c, enterpriseRows.length, 1);
+      if (c === 1) colRange.setHorizontalAlignment("center"); // License Plate
+      else if (c === 3) colRange.setHorizontalAlignment("right"); // Price
+      else colRange.setHorizontalAlignment("left"); // Rest
+    }
+  }
+
+
+
 }
 
 // MENU
