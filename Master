@@ -338,13 +338,6 @@ function calc() {
 
 }
 
-// MENU
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu("Al Raked")
-    .addItem("Performance Report", "calc")
-    .addToUi();
-}
 
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1"); // change if needed
@@ -430,13 +423,11 @@ function hidePrice() {
 // ADD PRICE MENU TO SPREADSHEET
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  
-  // Existing Al Raked Menu
+
   ui.createMenu("Al Raked")
     .addItem("Performance Report", "calc")
     .addToUi();
-    
-  // New Price Menu
+
   ui.createMenu("Price")
     .addItem("View Price", "viewPrice")
     .addItem("Hide Price", "hidePrice")
