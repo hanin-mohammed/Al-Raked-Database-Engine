@@ -41,15 +41,20 @@ function calc() {
     if (!empMap[empName]) empMap[empName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
     if (!foremanMap[foremanName]) foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
 
-    // Zeenah
-    if (service === "Zeena") {
+
+    // Zeena, Perfume, Wiper
+    const specialServices = ["Zeena", "Perfume", "Wipers"];
+    if (specialServices.includes(service)) {
+      if (!zeenahMap) var zeenahMap = {};
+      if (!zeenahMap[service]) zeenahMap[service] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+
       if (isToday) {
-        zeenahTodayCars++;
-        zeenahTodayAmt += amt;
+        zeenahMap[service].dailyCars++;
+        zeenahMap[service].dailyAmt += amt;
       }
       if (isThisMonth) {
-        zeenahMonthCars++;
-        zeenahMonthAmt += amt;
+        zeenahMap[service].monthlyCars++;
+        zeenahMap[service].monthlyAmt += amt;
       }
     }
 
@@ -141,9 +146,9 @@ function calc() {
   currentRow++;
 
   // Subheadings for two distinct tables
-  sheet.getRange(currentRow, 12, 1, 2).merge().setValue("EXCLUDING COMPANY")
+  sheet.getRange(currentRow, 12, 1, 2).merge().setValue("WITHOUT COMPANY")
     .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
-  sheet.getRange(currentRow, 15, 1, 2).merge().setValue("INCLUDING COMPANY")
+  sheet.getRange(currentRow, 15, 1, 2).merge().setValue("WITH COMPANY")
     .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow++;
 
@@ -243,12 +248,16 @@ function calc() {
     companyMap[name].monthlyCars
   ]);
   writeTable("COMPANY JOBS", ["COMPANY", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], compRows);
-
-  // Zeenah
-  const zeenahRows = [
-    ["Zeena", formatMoney(zeenahTodayAmt), zeenahTodayCars, formatMoney(zeenahMonthAmt), zeenahMonthCars]
-  ];
-  writeTable("ZEENA SERVICE", ["SERVICE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], zeenahRows);
+  // Zeena + Perfume + Wiper table
+  const zeenahList = Object.keys(zeenahMap || {});
+  const zeenahRows = zeenahList.map(svc => [
+    svc,
+    formatMoney(zeenahMap[svc].dailyAmt),
+    zeenahMap[svc].dailyCars,
+    formatMoney(zeenahMap[svc].monthlyAmt),
+    zeenahMap[svc].monthlyCars
+  ]);
+  writeTable("ZEENA SERVICE", ["SERVICE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], zeenahRows, [0]);
 
   // Oil Change
   const oilList = Object.keys(oilMap);
