@@ -179,14 +179,14 @@ function calc() {
   exclRange.setValues(summaryDataExcl).setFontFamily("DM Sans");
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 12, summaryDataExcl.length, 1).setHorizontalAlignment("left");
+  sheet.getRange(currentRow, 12, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
 
   // Right table
   const inclRange = sheet.getRange(currentRow, 15, summaryDataIncl.length, 2);
   inclRange.setValues(summaryDataIncl).setFontFamily("DM Sans");
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 15, summaryDataIncl.length, 1).setHorizontalAlignment("left");
+  sheet.getRange(currentRow, 15, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
 
   currentRow += summaryDataExcl.length + 2;
 
@@ -205,7 +205,14 @@ function calc() {
 
       // Alignment
       range.setHorizontalAlignment("right");
-      leftAlignCols.forEach(c => sheet.getRange(currentRow, 12 + c, rows.length, 1).setHorizontalAlignment("left"));
+      leftAlignCols.forEach(c => {
+        const range = sheet.getRange(currentRow, 12 + c, rows.length, 1);
+        range.setHorizontalAlignment("left");
+        range.setFontWeight("bold");
+      });
+
+      // Always bold the first column even if not left-aligned
+      sheet.getRange(currentRow, 12, rows.length, 1).setFontWeight("bold");
 
       currentRow += rows.length + 2;
     } else {
@@ -226,7 +233,7 @@ function calc() {
   currentRow += 2;
 
   // Employee
-  const empList = Object.keys(empMap).sort((a, b) => empMap[b].daily - empMap[a].daily);
+  const empList = Object.keys(empMap).sort((a, b) => empMap[b].carsToday - empMap[a].carsToday);
   const empRows = empList.map(name => [
     name,
     formatMoney(empMap[name].daily),
