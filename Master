@@ -499,13 +499,13 @@ function sevenDaySummary() {
   }
 
   // Clear old block
-  sheet.getRange("R1:V200").clearContent().clearFormat();
-  let row = 1;
+  sheet.getRange("S4:W200").clearContent().clearFormat();
+  let row = 4;
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
 
   // Header
-  sheet.getRange(row, 18, 1, 5).merge()
+  sheet.getRange(row, 19, 1, 5).merge()
     .setValue("7-DAY SUMMARY")
     .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans")
     .setHorizontalAlignment("center");
@@ -513,28 +513,28 @@ function sevenDaySummary() {
 
   // Column headers
   const headers = [["DATE", "EARNINGS", "CARS", "EARNINGS (COMPANY)", "CARS (COMPANY)"]];
-  sheet.getRange(row, 18, 1, 5).setValues(headers)
+  sheet.getRange(row, 19, 1, 5).setValues(headers)
     .setFontWeight("bold").setFontFamily("DM Sans")
     .setHorizontalAlignment("left");
   row++;
 
   // Rows
   const rows = last7Dates.map(obj => {
-  const dLabel = Utilities.formatDate(obj.date, Session.getScriptTimeZone(), "EEE, dd MMM"); // <-- day added
-  return [
-    dLabel,
-    formatMoney(dailyExcl[obj.key].amt),
-    dailyExcl[obj.key].cars,
-    formatMoney(dailyIncl[obj.key].amt),
-    dailyIncl[obj.key].cars
-  ];
-});
+    const dLabel = Utilities.formatDate(obj.date, Session.getScriptTimeZone(), "EEE, dd MMM"); // day added
+    return [
+      dLabel,
+      formatMoney(dailyExcl[obj.key].amt),
+      dailyExcl[obj.key].cars,
+      formatMoney(dailyIncl[obj.key].amt),
+      dailyIncl[obj.key].cars
+    ];
+  });
 
-  const range = sheet.getRange(row, 18, rows.length, 5);
+  const range = sheet.getRange(row, 19, rows.length, 5);
   range.setValues(rows).setFontFamily("DM Sans");
   range.setBorder(true, true, true, true, true, true);
   range.setHorizontalAlignment("right");
-  sheet.getRange(row, 18, rows.length, 1).setHorizontalAlignment("left");
+  sheet.getRange(row, 19, rows.length, 1).setHorizontalAlignment("left");
 }
 
 function createSevenDayTrigger() {
@@ -551,4 +551,16 @@ function createSevenDayTrigger() {
     .atHour(1)
     .everyDays(1)
     .create();
+}
+
+
+function onFormSubmit(e) {
+  // Step 1: Process sorting and formatting
+  processFormSubmission();
+
+  // Step 2: Assign image for the new entry
+  assignImageToNewEntry();
+
+  // Step 3: Update the performance report
+  calc();
 }
