@@ -154,7 +154,7 @@ function calc() {
   sheet.getRange("L1:R200").clearContent().clearFormat();
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
-  let currentRow = 1;
+  let currentRow = 2;
 
   // HEADER
   sheet.getRange(currentRow, 12, 1, 5).merge().setValue("EARNINGS REPORT")
