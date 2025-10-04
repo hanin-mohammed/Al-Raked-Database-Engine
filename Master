@@ -117,28 +117,36 @@ function calc() {
     // Totals
     const isCouponFreeWash = service === "Coupon [Free Wash]";
 
-       totalMonthExcl += amt;
+    if (isToday) {
+      if (isCompanyJob) {
+        carsTodayIncl++;
+        if (!isCouponFreeWash) {
+          totalTodayIncl += amt;
         }
-      }if (isToday) {
-      carsTodayIncl++;  // Car always counts
-      carsTodayExcl++;  // Car always counts
-
-      if (!isCouponFreeWash) {  // Money does NOT count for overall totals
-        totalTodayIncl += amt;
-        if (!isCompanyJob) {
+      } else {
+        carsTodayIncl++;
+        carsTodayExcl++;
+        if (!isCouponFreeWash) {
+          totalTodayIncl += amt;
           totalTodayExcl += amt;
         }
       }
     }
 
     if (isThisMonth) {
-      carsMonthIncl++;
-      carsMonthExcl++;
-
-      if (!isCouponFreeWash) {  // Money does NOT count for overall totals
-        totalMonthIncl += amt;
-        if (!isCompanyJob) {
-       
+      if (isCompanyJob) {
+        carsMonthIncl++;
+        if (!isCouponFreeWash) {
+          totalMonthIncl += amt;
+        }
+      } else {
+        carsMonthIncl++;
+        carsMonthExcl++;
+        if (!isCouponFreeWash) {
+          totalMonthIncl += amt;
+          totalMonthExcl += amt;
+        }
+      }
     }
   }
 
