@@ -115,7 +115,8 @@ function calc() {
     }
 
     // Totals
-    const isCouponFreeWash = service === "Coupon [Free Wash]" || service === "4+1 Free Wash";
+    const serviceStr = (service || "").toString().toLowerCase();
+    const isCouponFreeWash = serviceStr.includes("coupon [free wash]") || serviceStr.includes("4+1 free wash");
 
     if (isToday) {
       if (isCompanyJob) {
