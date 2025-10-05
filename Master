@@ -5,6 +5,7 @@ function calc() {
   const todayStr = today.toDateString();
   const month = today.getMonth();
   const year = today.getFullYear();
+  const zeenahMap = {};
 
   const empMap = {};
   const foremanMap = {};
@@ -14,67 +15,74 @@ function calc() {
   let totalTodayExcl = 0, totalMonthExcl = 0;
   let carsTodayIncl = 0, carsMonthIncl = 0;
   let carsTodayExcl = 0, carsMonthExcl = 0;
-  let zeenahTodayCars = 0, zeenahMonthCars = 0;
-  let zeenahTodayAmt = 0, zeenahMonthAmt = 0;
   let enterpriseJobs = [];
 
   for (let i = 1; i < data.length; i++) {
-    const [timestamp, foreman, employee, licensePlate, service, price, company, oilChange, companyDetail] = data[i];
-    const date = new Date(timestamp);
-    let amt = 0;
-    if (price && price.toString().trim().toLowerCase() !== "free") {
-      amt = parseFloat(price) || 0;
+    const [timestamp, foreman, employee, licensePlate, service, serviceFee, company, oilChange, companyDetail, specialPrice] = data[i];
+    if (!timestamp) continue;
+    let serviceAmt = 0;
+    if (serviceFee && serviceFee.toString().trim().toLowerCase() !== "free") {
+      serviceAmt = parseFloat(serviceFee) || 0;
+    }
+
+    let actualAmt;
+    if (specialPrice !== "" && specialPrice !== null && specialPrice !== undefined) {
+      actualAmt = parseFloat(specialPrice) || 0; // if 0 entered, that's still valid
+    } else {
+      actualAmt = serviceAmt; // fallback to service fee if no special price
     }
 
     if (
       (companyDetail && companyDetail.toString().trim() !== "") || 
       (company && company.toString().trim() === "Private Office")
     ) {
-      enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, price, company, oilChange, companyDetail]);
+      enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, actualAmt, company, oilChange, companyDetail]);
     }
 
     // Skip blank rows completely
-    if (!timestamp) continue;
+    const date = new Date(timestamp);
 
-    const empName = (employee || "").toString().trim();
+    const empNames = (employee || "").toString().split(",").map(e => e.trim()).filter(e => e !== "");
     const foremanName = (foreman || "").toString().trim();
 
     // Skip any row with missing names (prevents "Unknown")
-    if (!empName || !foremanName) continue;
+    if (empNames.length === 0 || !foremanName) continue;
 
     const isToday = date.toDateString() === todayStr;
     const isThisMonth = date.getMonth() === month && date.getFullYear() === year;
     const isCompanyJob = company && company.toString().trim() !== "";
 
-    if (!empMap[empName]) empMap[empName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
-    if (!foremanMap[foremanName]) foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+  
+    if (!foremanMap[foremanName]) {
+      foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+    }
 
 
     // Zeena, Perfume, Wiper
     const specialServices = ["Zeena", "Perfume", "Wipers"];
     if (specialServices.includes(service)) {
-      if (!zeenahMap) var zeenahMap = {};
       if (!zeenahMap[service]) zeenahMap[service] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
-
       if (isToday) {
         zeenahMap[service].dailyCars++;
-        zeenahMap[service].dailyAmt += amt;
+        zeenahMap[service].dailyAmt += serviceAmt;
       }
       if (isThisMonth) {
         zeenahMap[service].monthlyCars++;
-        zeenahMap[service].monthlyAmt += amt;
+        zeenahMap[service].monthlyAmt += serviceAmt;
       }
     }
 
     // Company
     if (isCompanyJob) {
-      if (!companyMap[company]) companyMap[company] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (!companyMap[company]) {
+        companyMap[company] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      }
       if (isToday) {
-        companyMap[company].dailyAmt += amt;
+        companyMap[company].dailyAmt += serviceAmt;
         companyMap[company].dailyCars++;
       }
       if (isThisMonth) {
-        companyMap[company].monthlyAmt += amt;
+        companyMap[company].monthlyAmt += serviceAmt;
         companyMap[company].monthlyCars++;
       }
     }
@@ -83,70 +91,65 @@ function calc() {
     if (oilChange && oilChange.toString().trim() !== "") {
       if (!oilMap[oilChange]) oilMap[oilChange] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
       if (isToday) {
-        oilMap[oilChange].dailyAmt += amt;
+        oilMap[oilChange].dailyAmt += serviceAmt;
         oilMap[oilChange].dailyCars++;
       }
       if (isThisMonth) {
-        oilMap[oilChange].monthlyAmt += amt;
+        oilMap[oilChange].monthlyAmt += serviceAmt;
         oilMap[oilChange].monthlyCars++;
       }
     }
 
     // Employee (include all)
-    if (isToday) {
-      empMap[empName].daily += amt;
-      empMap[empName].carsToday++;
-    }
-    if (isThisMonth) {
-      empMap[empName].monthly += amt;
-      empMap[empName].carsMonth++;
-    }
+    const splitAmt = serviceAmt / empNames.length;
+    empNames.forEach(name => {
+      if (!empMap[name]) empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+      if (isToday) {
+        empMap[name].daily += splitAmt;
+        empMap[name].carsToday++;
+      }
+      if (isThisMonth) {
+        empMap[name].monthly += splitAmt;
+        empMap[name].carsMonth++;
+      }
+    });
+  
 
     // Foreman (exclude company)
     if (!isCompanyJob) {
       if (isToday) {
-        foremanMap[foremanName].daily += amt;
+        foremanMap[foremanName].daily += serviceAmt;
         foremanMap[foremanName].carsToday++;
       }
       if (isThisMonth) {
-        foremanMap[foremanName].monthly += amt;
+        foremanMap[foremanName].monthly += serviceAmt;
         foremanMap[foremanName].carsMonth++;
       }
     }
 
     // Totals
-    const serviceStr = (service || "").toString().toLowerCase();
-    const isCouponFreeWash = serviceStr.includes("coupon [free wash]") || serviceStr.includes("4+1 free wash");
 
     if (isToday) {
       if (isCompanyJob) {
         carsTodayIncl++;
-        if (!isCouponFreeWash) {
-          totalTodayIncl += amt;
-        }
+        totalTodayIncl += actualAmt;
       } else {
         carsTodayIncl++;
         carsTodayExcl++;
-        if (!isCouponFreeWash) {
-          totalTodayIncl += amt;
-          totalTodayExcl += amt;
-        }
+        totalTodayIncl += actualAmt;
+        totalTodayExcl += actualAmt;
       }
     }
 
     if (isThisMonth) {
       if (isCompanyJob) {
         carsMonthIncl++;
-        if (!isCouponFreeWash) {
-          totalMonthIncl += amt;
-        }
+        totalMonthIncl += actualAmt;
       } else {
         carsMonthIncl++;
         carsMonthExcl++;
-        if (!isCouponFreeWash) {
-          totalMonthIncl += amt;
-          totalMonthExcl += amt;
-        }
+        totalMonthIncl += actualAmt;
+        totalMonthExcl += actualAmt;
       }
     }
   }
@@ -228,8 +231,7 @@ function calc() {
         range.setFontWeight("bold");
       });
 
-      // Always bold the first column even if not left-aligned
-      sheet.getRange(currentRow, 12, rows.length, 1).setFontWeight("bold");
+
 
       currentRow += rows.length + 2;
     } else {
@@ -282,7 +284,7 @@ function calc() {
   ]);
   writeTable("COMPANY JOBS", ["COMPANY", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], compRows);
   // Zeena + Perfume + Wiper table
-  const zeenahList = Object.keys(zeenahMap || {});
+  const zeenahList = Object.keys(zeenahMap);
   const zeenahRows = zeenahList.map(svc => [
     svc,
     formatMoney(zeenahMap[svc].dailyAmt),
@@ -312,7 +314,7 @@ function calc() {
     const enterpriseRows = enterpriseJobs.map(row => {
       const date = row[0] ? Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), "dd/MM/yy") : "";
       const price = parseFloat(row[5]) || 0;
-      const formattedPrice = `${price.toLocaleString("en-US")} AED`;
+      const formattedPrice = `AED ${price.toLocaleString("en-US")}`;
       return [date, row[3], row[4], formattedPrice, row[6], row[8]]; 
       // columns: Date, License Plate, Service, Price, Company, Detail
     });
