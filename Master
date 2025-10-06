@@ -351,6 +351,8 @@ function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1"); // change if needed
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
+  const maxCol = sheet.getMaxColumns();
+  const safeLastCol = Math.min(lastCol, maxCol);
 
   // 1. Unmerge everything to prevent sort errors
   sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
@@ -363,9 +365,8 @@ function processFormSubmission() {
 
   // 3. Copy formatting from row 3 (previous top) to row 2 (newest entry)
   if (lastRow >= 3) {
-    const sourceFormat = sheet.getRange(3, 1, 1, lastCol);
-    const targetFormat = sheet.getRange(2, 1, 1, lastCol);
-    sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
+    const sourceFormat = sheet.getRange(3, 1, 1, safeLastCol);
+    sourceFormat.copyFormatToRange(sheet, 1, safeLastCol, 2, 2);
   }
 /*
   // 4. Insert images based on employee name in column C into column I (after sorting)
