@@ -155,29 +155,29 @@ function calc() {
   }
 
   // Clear output
-  sheet.getRange("L1:R200").clearContent().clearFormat();
+  sheet.getRange("M1:R200").clearContent().clearFormat();
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
 
   // HEADER
-  sheet.getRange(currentRow, 12, 1, 5).merge().setValue("EARNINGS REPORT")
+  sheet.getRange(currentRow, 13, 1, 5).merge().setValue("EARNINGS REPORT")
     .setFontWeight("bold").setFontSize(14).setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow++;
-  sheet.getRange(currentRow, 12, 1, 5).merge()
+  sheet.getRange(currentRow, 13, 1, 5).merge()
     .setValue("Last Updated: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy HH:mm:ss"))
     .setFontSize(10).setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow += 2;
 
   // SUMMARY HEADING
-  sheet.getRange(currentRow, 12, 1, 5).merge().setValue("DAILY & MONTHLY SUMMARY")
+  sheet.getRange(currentRow, 13, 1, 5).merge().setValue("DAILY & MONTHLY SUMMARY")
     .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow++;
 
   // Subheadings for two distinct tables
-  sheet.getRange(currentRow, 12, 1, 2).merge().setValue("WITHOUT COMPANY")
+  sheet.getRange(currentRow, 13, 1, 2).merge().setValue("WITHOUT COMPANY")
     .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
-  sheet.getRange(currentRow, 15, 1, 2).merge().setValue("WITH COMPANY")
+  sheet.getRange(currentRow, 16, 1, 2).merge().setValue("WITH COMPANY")
     .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow++;
 
@@ -195,38 +195,38 @@ function calc() {
   ];
 
   // Left table
-  const exclRange = sheet.getRange(currentRow, 12, summaryDataExcl.length, 2);
+  const exclRange = sheet.getRange(currentRow, 13, summaryDataExcl.length, 2);
   exclRange.setValues(summaryDataExcl).setFontFamily("DM Sans");
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 12, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
+  sheet.getRange(currentRow, 13, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
 
   // Right table
-  const inclRange = sheet.getRange(currentRow, 15, summaryDataIncl.length, 2);
+  const inclRange = sheet.getRange(currentRow, 16, summaryDataIncl.length, 2);
   inclRange.setValues(summaryDataIncl).setFontFamily("DM Sans");
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 15, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
+  sheet.getRange(currentRow, 16, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
 
   currentRow += summaryDataExcl.length + 2;
 
   // Generic table function
   function writeTable(title, headers, rows, leftAlignCols = [0]) {
-    sheet.getRange(currentRow, 12, 1, headers.length).merge().setValue(title)
+    sheet.getRange(currentRow, 13, 1, headers.length).merge().setValue(title)
       .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans").setHorizontalAlignment("center");
     currentRow++;
-    sheet.getRange(currentRow, 12, 1, headers.length).setValues([headers])
+    sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers])
       .setFontWeight("bold").setFontFamily("DM Sans");
     currentRow++;
     if (rows.length) {
-      const range = sheet.getRange(currentRow, 12, rows.length, headers.length);
+      const range = sheet.getRange(currentRow, 13, rows.length, headers.length);
       range.setValues(rows).setFontFamily("DM Sans");
       range.setBorder(true, true, true, true, true, true);
 
       // Alignment
       range.setHorizontalAlignment("right");
       leftAlignCols.forEach(c => {
-        const range = sheet.getRange(currentRow, 12 + c, rows.length, 1);
+        const range = sheet.getRange(currentRow, 13 + c, rows.length, 1);
         range.setHorizontalAlignment("left");
         range.setFontWeight("bold");
       });
@@ -247,7 +247,7 @@ function calc() {
       topEmp = emp;
     }
   }
-  sheet.getRange(currentRow, 12, 1, 5).merge().setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
+  sheet.getRange(currentRow, 13, 1, 5).merge().setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
     .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
   currentRow += 2;
 
@@ -306,7 +306,7 @@ function calc() {
   writeTable("OIL CHANGE", ["OIL TYPE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
   
   if (oilRows.length) {
-    sheet.getRange(currentRow - oilRows.length - 2, 12, oilRows.length, 1).setWrap(true);
+    sheet.getRange(currentRow - oilRows.length - 2, 13, oilRows.length, 1).setWrap(true);
   }
 
   // Enterprise Jobs
@@ -327,19 +327,19 @@ function calc() {
 
     // Adjust alignment and bold manually after writing
     const startRow = currentRow - enterpriseRows.length - 2; // writeTable moves currentRow
-    const sheetRange = sheet.getRange(startRow, 12, enterpriseRows.length, 6);
+    const sheetRange = sheet.getRange(startRow, 13, enterpriseRows.length, 6);
 
     // Bold all
     sheetRange.setFontWeight("bold");
 
     // Alignment
     for (let c = 0; c < 6; c++) {
-      const colRange = sheet.getRange(startRow, 12 + c, enterpriseRows.length, 1);
+      const colRange = sheet.getRange(startRow, 13 + c, enterpriseRows.length, 1);
       if (c === 1) colRange.setHorizontalAlignment("center"); // License Plate
       else if (c === 3) colRange.setHorizontalAlignment("right"); // Price
       else colRange.setHorizontalAlignment("left"); // Rest
     }
-    sheet.getRange(startRow, 17, enterpriseRows.length, 1).setWrap(true); // Column Q
+    sheet.getRange(startRow, 18, enterpriseRows.length, 1).setWrap(true); // Column Q
   }
 
 
@@ -351,8 +351,6 @@ function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1"); // change if needed
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
-  const maxCol = sheet.getMaxColumns();
-  const safeLastCol = Math.min(lastCol, maxCol);
 
   // 1. Unmerge everything to prevent sort errors
   sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
@@ -365,8 +363,9 @@ function processFormSubmission() {
 
   // 3. Copy formatting from row 3 (previous top) to row 2 (newest entry)
   if (lastRow >= 3) {
-    const sourceFormat = sheet.getRange(3, 1, 1, safeLastCol);
-    sourceFormat.copyFormatToRange(sheet, 1, safeLastCol, 2, 2);
+    const sourceFormat = sheet.getRange(3, 1, 1, lastCol);
+    const targetFormat = sheet.getRange(2, 1, 1, lastCol);
+    sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
   }
 /*
   // 4. Insert images based on employee name in column C into column I (after sorting)
