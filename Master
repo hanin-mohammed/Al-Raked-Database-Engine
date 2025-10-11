@@ -348,25 +348,23 @@ function calc() {
 
 
 function processFormSubmission() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1"); // change if needed
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
+  const dataLastCol = 10; // A–J
 
-  // 1. Unmerge everything to prevent sort errors
-  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
-
-  // 2. Sort by Timestamp (Column A) descending — newest entries first
+  // 1. Sort only the data region (A–J), starting from row 2
   if (lastRow > 1) {
-    const sortRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+    const sortRange = sheet.getRange(2, 1, lastRow - 1, dataLastCol);
     sortRange.sort({ column: 1, ascending: false });
   }
 
-  // 3. Copy formatting from row 3 (previous top) to row 2 (newest entry)
+  // 2. Copy formatting from row 3 to row 2 (to keep consistent style)
   if (lastRow >= 3) {
-    const sourceFormat = sheet.getRange(3, 1, 1, lastCol);
-    const targetFormat = sheet.getRange(2, 1, 1, lastCol);
-    sourceFormat.copyFormatToRange(sheet, 1, lastCol, 2, 2);
+    const sourceFormat = sheet.getRange(3, 1, 1, dataLastCol);
+    const targetFormat = sheet.getRange(2, 1, 1, dataLastCol);
+    sourceFormat.copyFormatToRange(sheet, 1, dataLastCol, 2, 2);
   }
+
 /*
   // 4. Insert images based on employee name in column C into column I (after sorting)
   const data = sheet.getDataRange().getValues();
