@@ -1,5 +1,5 @@
 function calc() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const data = sheet.getDataRange().getValues();
   const today = new Date();
   const todayStr = today.toDateString();
@@ -155,7 +155,7 @@ function calc() {
   }
 
   // Clear output
-  sheet.getRange("M1:R200").clearContent().clearFormat();
+  sheet.getRange("M1:R400").clearContent().clearFormat();
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
@@ -442,7 +442,7 @@ function onOpen() {
 
 function emailPerformanceReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getActiveSheet();
+  const sheet = ss.getSheetByName("Form Responses 1");
 
   // 1. Generate latest report
   calc();
