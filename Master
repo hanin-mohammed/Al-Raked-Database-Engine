@@ -518,3 +518,51 @@ function onFormSubmit(e) {
   // 3. Update the performance report
   calc();
 }
+
+//Duplicating sheet once a month
+
+function duplicateSheetAtMonthEnd() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName("Form Responses 1");
+  if (!sourceSheet) return;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  // Check if today is the last day of the month
+  const tomorrow = new Date(year, month, now.getDate() + 1);
+  if (tomorrow.getMonth() !== month) {
+    // Today is last day of month
+    const monthName = Utilities.formatDate(
+      now,
+      Session.getScriptTimeZone(),
+      "MMMM yyyy"
+    );
+
+    const newName = `Form Responses 1 - ${monthName}`;
+
+    // Avoid duplicate copies if script runs again
+    if (ss.getSheetByName(newName)) return;
+
+    sourceSheet.copyTo(ss).setName(newName);
+  }
+}
+
+function createMonthEndTrigger() {
+  // Remove existing trigger if present
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === "duplicateSheetAtMonthEnd") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  // Run every day at 11:45 PM
+  ScriptApp.newTrigger("duplicateSheetAtMonthEnd")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(45)
+    .everyDays(1)
+    .create();
+}
