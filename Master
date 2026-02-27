@@ -162,23 +162,23 @@ function calc() {
 
   // HEADER
   sheet.getRange(currentRow, 13, 1, 5).merge().setValue("EARNINGS REPORT")
-    .setFontWeight("bold").setFontSize(14).setFontFamily("DM Sans").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontSize(18).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
   currentRow++;
   sheet.getRange(currentRow, 13, 1, 5).merge()
     .setValue("Last Updated: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy HH:mm:ss"))
-    .setFontSize(10).setFontFamily("DM Sans").setHorizontalAlignment("center");
+    .setFontSize(10).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
   currentRow += 2;
 
   // SUMMARY HEADING
   sheet.getRange(currentRow, 13, 1, 5).merge().setValue("DAILY & MONTHLY SUMMARY")
-    .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontSize(17).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
   currentRow++;
 
   // Subheadings for two distinct tables
   sheet.getRange(currentRow, 13, 1, 2).merge().setValue("WITHOUT COMPANY")
-    .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
   sheet.getRange(currentRow, 16, 1, 2).merge().setValue("WITH COMPANY")
-    .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
   currentRow++;
 
   const summaryDataExcl = [
@@ -196,31 +196,45 @@ function calc() {
 
   // Left table
   const exclRange = sheet.getRange(currentRow, 13, summaryDataExcl.length, 2);
-  exclRange.setValues(summaryDataExcl).setFontFamily("DM Sans");
+  exclRange.setValues(summaryDataExcl).setFontFamily("IBM Plex Mono");
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 13, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
+  sheet.getRange(currentRow, 13, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Mono").setFontSize(14);
 
   // Right table
   const inclRange = sheet.getRange(currentRow, 16, summaryDataIncl.length, 2);
-  inclRange.setValues(summaryDataIncl).setFontFamily("DM Sans");
+  inclRange.setValues(summaryDataIncl).setFontFamily("IBM Plex Mono");
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 16, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left");
+  sheet.getRange(currentRow, 16, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Mono").setFontSize(14);
+
+  // FORMAT SUMMARY VALUES
+
+sheet.getRange(currentRow, 14, summaryDataExcl.length, 1)
+  .setFontFamily("IBM Plex Mono")
+  .setFontSize(16)
+  .setFontWeight("bold")
+  .setHorizontalAlignment("right");
+
+sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
+  .setFontFamily("IBM Plex Mono")
+  .setFontSize(16)
+  .setFontWeight("bold")
+  .setHorizontalAlignment("right");
 
   currentRow += summaryDataExcl.length + 2;
 
   // Generic table function
   function writeTable(title, headers, rows, leftAlignCols = [0]) {
     sheet.getRange(currentRow, 13, 1, headers.length).merge().setValue(title)
-      .setFontWeight("bold").setFontSize(12).setFontFamily("DM Sans").setHorizontalAlignment("center");
+      .setFontWeight("bold").setFontSize(16).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
     currentRow++;
     sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers])
-      .setFontWeight("bold").setFontFamily("DM Sans");
+      .setFontWeight("bold").setFontFamily("IBM Plex Mono");
     currentRow++;
     if (rows.length) {
       const range = sheet.getRange(currentRow, 13, rows.length, headers.length);
-      range.setValues(rows).setFontFamily("DM Sans");
+      range.setValues(rows).setFontFamily("IBM Plex Mono");
       range.setBorder(true, true, true, true, true, true);
 
       // Alignment
@@ -248,7 +262,7 @@ function calc() {
     }
   }
   sheet.getRange(currentRow, 13, 1, 5).merge().setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
-    .setFontWeight("bold").setFontFamily("DM Sans").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
   currentRow += 2;
 
   // Employee
