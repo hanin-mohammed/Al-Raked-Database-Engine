@@ -358,11 +358,28 @@ function processFormSubmission() {
     sortRange.sort({ column: 1, ascending: false });
   }
 
-  // 2. Copy formatting from row 3 to row 2 (to keep consistent style)
-  if (lastRow >= 3) {
-    const sourceFormat = sheet.getRange(3, 1, 1, dataLastCol);
-    const targetFormat = sheet.getRange(2, 1, 1, dataLastCol);
-    sourceFormat.copyFormatToRange(sheet, 1, dataLastCol, 2, 2);
+  // 2. APPLY TEMPLATE FORMATTING FROM ROW 1 T–AC → NEW ROW A–H
+
+  if (lastRow >= 2) {
+
+    const templateRange = sheet.getRange(1, 20, 1, 8);
+    // Row 1, Column 20 = T
+    // 8 columns = T–AC
+
+
+    const targetRange = sheet.getRange(2, 1, 1, 8);
+    // Row 2, Column 1 = A
+    // 8 columns = A–H
+
+
+    templateRange.copyFormatToRange(
+      sheet,
+      1,
+      8,
+      2,
+      2
+    );
+
   }
 
 /*
