@@ -389,7 +389,7 @@ function processFormSubmission() {
     templateRange.copyFormatToRange(
       sheet,
       1,
-      8,
+      10,
       2,
       2
     );
