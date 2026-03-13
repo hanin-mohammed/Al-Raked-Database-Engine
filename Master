@@ -376,12 +376,12 @@ function processFormSubmission() {
 
   if (lastRow >= 2) {
 
-    const templateRange = sheet.getRange(1, 20, 1, 10);
+    const templateRange = sheet.getRange(1, 20, 1, 11);
     // Row 1, Column 20 = T
     // 8 columns = T–AC
 
 
-    const targetRange = sheet.getRange(2, 1, 1, 10);
+    const targetRange = sheet.getRange(2, 1, 1, 11);
     // Row 2, Column 1 = A
     // 8 columns = A–H
 
@@ -389,7 +389,7 @@ function processFormSubmission() {
     templateRange.copyFormatToRange(
       sheet,
       1,
-      10,
+      11,
       2,
       2
     );
