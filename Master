@@ -364,7 +364,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const lastRow = sheet.getLastRow();
-  const dataLastCol = 10; // A–J
+  const dataLastCol = 11; // A–J
 
   // 1. Sort only the data region (A–J), starting from row 2
   if (lastRow > 1) {
