@@ -589,11 +589,11 @@ function createMonthEndTrigger() {
     }
   }
 
-  // Run every day at 11:45 PM
+  // Run every day at 11:55 PM
   ScriptApp.newTrigger("duplicateSheetAtMonthEnd")
     .timeBased()
     .atHour(23)
-    .nearMinute(45)
+    .nearMinute(55)
     .everyDays(1)
     .create();
 }
