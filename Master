@@ -434,12 +434,16 @@ function detectPriceChange(e) {
   const logSheet = e.source.getSheetByName("PriceAudit");
 
   // --- SERVICE CHANGE TRACKING (no logging) ---
+// --- SERVICE CHANGE TRACKING ---
   if (col === SERVICE_COL) {
 
     // store original service only once
     if (!props.getProperty(key) && e.oldValue) {
       props.setProperty(key, e.oldValue);
     }
+
+    // highlight edited service cell
+    sheet.getRange(row, SERVICE_COL).setBackground("#f7c6c6");
 
     return;
   }
@@ -677,10 +681,10 @@ function emailPerformanceReport() {
 
       changes.push(
   `Change Time: ${changeTimeText}
-Original Entry: ${entryTimeText}
-Plate: ${row[2]}
+Original Entry Time: ${entryTimeText}
+License Plate: ${row[2]}
 Original Service: ${row[3]}
-Service At Price Change: ${row[4]}
+New Service: ${row[4]}
 Employee: ${row[5]}
 Entry Foreman: ${row[6]}
 Old Price: ${row[7]}
