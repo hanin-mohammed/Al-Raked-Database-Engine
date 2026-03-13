@@ -413,20 +413,11 @@ function detectPriceChange(e) {
   const row = e.range.getRow();
   const col = e.range.getColumn();
 
-  // Only track price columns
-  if (col !== 6) return;
   if (row === 1) return;
 
-  if (typeof e.oldValue === "undefined") return;
-
-  const oldValue = e.oldValue;
-  const newValue = e.value;
-
-  if (oldValue == newValue) return;
-
-  // Soft red highlight on the edited price cell
-  const priceCell = sheet.getRange(row, 6);
-  priceCell.setBackground("#f7c6c6");
+  const SERVICE_COL = 5;
+  const PRICE_COL = 6;
+  const SERVICE_TRACK_COL = 11;
 
   const rowData = sheet.getRange(row,1,1,10).getValues()[0];
 
@@ -434,11 +425,35 @@ function detectPriceChange(e) {
   const entryForeman = rowData[1];
   const employee = rowData[2];
   const license = rowData[3];
-  const service = rowData[4];
+  const currentService = rowData[4];
 
   const changeTime = new Date();
 
-  // Determine which foreman is currently active
+  const logSheet = e.source.getSheetByName("PriceAudit");
+
+  // --- SERVICE CHANGE TRACKING (no logging) ---
+  if (col === SERVICE_COL) {
+
+    // store latest service silently
+    sheet.getRange(row, SERVICE_TRACK_COL).setValue(e.value);
+
+    return;
+  }
+
+  // --- PRICE CHANGE ---
+  if (col !== PRICE_COL) return;
+
+  if (typeof e.oldValue === "undefined") return;
+  if (e.oldValue == e.value) return;
+
+  const oldValue = e.oldValue;
+  const newValue = e.value;
+
+  const storedService = sheet.getRange(row, SERVICE_TRACK_COL).getValue() || currentService;
+
+  // highlight edited price
+  sheet.getRange(row, PRICE_COL).setBackground("#f7c6c6");
+
   const data = sheet.getDataRange().getValues();
   let activeForeman = "Unknown";
 
@@ -454,12 +469,12 @@ function detectPriceChange(e) {
 
   }
 
-  const logSheet = e.source.getSheetByName("PriceAudit");
   logSheet.appendRow([
     changeTime,
     timestamp,
     license,
-    service,
+    storedService,     // service before edit
+    currentService,    // service at price change
     employee,
     entryForeman,
     oldValue,
@@ -467,20 +482,21 @@ function detectPriceChange(e) {
     activeForeman
   ]);
 
-  SpreadsheetApp.flush(); // ensure sheet updates
+  SpreadsheetApp.flush();
 
   const lastRow = logSheet.getLastRow();
 
-  // Sort by Change Time (Column A) newest first
   if (lastRow > 2) {
-    logSheet.getRange(2, 1, lastRow - 1, 9).sort({ column: 1, ascending: false });
+    logSheet.getRange(2,1,lastRow-1,10).sort({ column:1, ascending:false });
   }
 
-  // Copy formatting from row below the newest entry
   if (lastRow > 3) {
-    const source = logSheet.getRange(3, 1, 1, 9);
-    source.copyFormatToRange(logSheet, 1, 9, 2, 2);
+    const source = logSheet.getRange(3,1,1,10);
+    source.copyFormatToRange(logSheet,1,10,2,2);
   }
+
+  // update stored service after logging
+  sheet.getRange(row, SERVICE_TRACK_COL).setValue(currentService);
 }
 
 
@@ -651,17 +667,18 @@ function emailPerformanceReport() {
       );
 
       changes.push(
-        `Change Time: ${changeTimeText}
+  `Change Time: ${changeTimeText}
   Original Entry: ${entryTimeText}
   Plate: ${row[2]}
-  Service: ${row[3]}
-  Employee: ${row[4]}
-  Entry Foreman: ${row[5]}
-  Old Price: ${row[6]}
-  New Price: ${row[7]}
-  Foreman at Time of Change: ${row[8]}
+  Original Service: ${row[3]}
+  Service At Price Change: ${row[4]}
+  Employee: ${row[5]}
+  Entry Foreman: ${row[6]}
+  Old Price: ${row[7]}
+  New Price: ${row[8]}
+  Foreman at Time of Change: ${row[9]}
   `
-      );
+);
 
     }
 
@@ -722,7 +739,7 @@ function onFormSubmit(e) {
   calc();
 }
 
-function onEdit(e) {
+function handleEdit(e) {
   detectPriceChange(e);
 }
 
