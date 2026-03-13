@@ -8,9 +8,11 @@ function calc() {
   const zeenahMap = {};
 
   const empMap = {};
+  const empLastWorkToday = {};
   const foremanMap = {};
   const companyMap = {}; 
   const oilMap = {}; 
+  
   let totalTodayIncl = 0, totalMonthIncl = 0;
   let totalTodayExcl = 0, totalMonthExcl = 0;
   let carsTodayIncl = 0, carsMonthIncl = 0;
@@ -104,10 +106,17 @@ function calc() {
     const splitAmt = serviceAmt / empNames.length;
     empNames.forEach(name => {
       if (!empMap[name]) empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+
       if (isToday) {
         empMap[name].daily += splitAmt;
         empMap[name].carsToday++;
+
+        // Track last job timestamp today
+        if (!empLastWorkToday[name] || date > empLastWorkToday[name]) {
+          empLastWorkToday[name] = date;
+        }
       }
+
       if (isThisMonth) {
         empMap[name].monthly += splitAmt;
         empMap[name].carsMonth++;
@@ -267,14 +276,45 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
   // Employee
   const empList = Object.keys(empMap).sort((a, b) => empMap[b].carsToday - empMap[a].carsToday);
-  const empRows = empList.map(name => [
-    name,
-    formatMoney(empMap[name].daily),
-    empMap[name].carsToday,
-    formatMoney(empMap[name].monthly),
-    empMap[name].carsMonth
-  ]);
-  writeTable("EMPLOYEE PERFORMANCE", ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], empRows);
+  const now = new Date();
+
+  const empRows = empList.map(name => {
+
+    let lastWorkText = "No work today";
+
+    if (empLastWorkToday[name]) {
+      const last = empLastWorkToday[name];
+      const diffMinutes = Math.floor((now - last) / 60000);
+      const time = Utilities.formatDate(last, Session.getScriptTimeZone(), "HH:mm");
+
+      let timeText;
+
+      if (diffMinutes >= 60) {
+        const hours = Math.floor(diffMinutes / 60);
+        const mins = diffMinutes % 60;
+        timeText = mins ? `${hours}h ${mins}m` : `${hours}h`;
+      } else {
+        timeText = `${diffMinutes}m`;
+      }
+
+      lastWorkText = `${timeText} (${time})`;
+    }
+
+    return [
+      name,
+      formatMoney(empMap[name].daily),
+      empMap[name].carsToday,
+      formatMoney(empMap[name].monthly),
+      empMap[name].carsMonth,
+      lastWorkText
+    ];
+  });
+
+  writeTable(
+    "EMPLOYEE PERFORMANCE",
+    ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH", "LAST WORK"],
+    empRows
+  );
 
   // Foreman
   const foremanList = Object.keys(foremanMap).sort((a, b) => foremanMap[b].daily - foremanMap[a].daily);
@@ -361,6 +401,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 }
 
 
+
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const lastRow = sheet.getLastRow();
@@ -370,6 +411,7 @@ function processFormSubmission() {
   if (lastRow > 1) {
     const sortRange = sheet.getRange(2, 1, lastRow - 1, dataLastCol);
     sortRange.sort({ column: 1, ascending: false });
+    
   }
 
   // 2. APPLY TEMPLATE FORMATTING FROM ROW 1 T–AC → NEW ROW A–H
@@ -393,6 +435,7 @@ function processFormSubmission() {
       2,
       2
     );
+   
 
   }
 
@@ -544,7 +587,7 @@ function onFormSubmit(e) {
   processFormSubmission();
 
   // 2. Wait 10 seconds for Google Sheets to finish updating
-  Utilities.sleep(10000);
+  Utilities.sleep(2000);
 
   // 3. Update the performance report
   calc();
