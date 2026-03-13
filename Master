@@ -283,6 +283,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
     let lastWorkText = "No work today";
 
     if (empLastWorkToday[name]) {
+
       const last = empLastWorkToday[name];
       const diffMinutes = Math.floor((now - last) / 60000);
       const time = Utilities.formatDate(last, Session.getScriptTimeZone(), "HH:mm");
@@ -297,24 +298,27 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
         timeText = `${diffMinutes}m`;
       }
 
-      lastWorkText = `${timeText} (${time})`;
+      lastWorkText = `${timeText} ago (${time})`;
+
     }
 
     return [
-      name,
+      `${name} · ${lastWorkText}`,
       formatMoney(empMap[name].daily),
       empMap[name].carsToday,
       formatMoney(empMap[name].monthly),
-      empMap[name].carsMonth,
-      lastWorkText
+      empMap[name].carsMonth
     ];
+    
   });
 
   writeTable(
     "EMPLOYEE PERFORMANCE",
-    ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH", "LAST WORK"],
+    ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"],
     empRows
   );
+
+
 
   // Foreman
   const foremanList = Object.keys(foremanMap).sort((a, b) => foremanMap[b].daily - foremanMap[a].daily);
@@ -400,6 +404,70 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
 }
 
+function detectPriceChange(e) {
+
+  const sheetName = "Form Responses 1";
+  const sheet = e.source.getActiveSheet();
+  if (sheet.getName() !== sheetName) return;
+
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+
+  // Only track price columns
+  if (col !== 6) return;
+  if (row === 1) return;
+
+  if (typeof e.oldValue === "undefined") return;
+
+  const oldValue = e.oldValue;
+  const newValue = e.value;
+
+  if (oldValue == newValue) return;
+
+  // Soft red highlight on the edited price cell
+  const priceCell = sheet.getRange(row, 6);
+  priceCell.setBackground("#f7c6c6");
+
+  const rowData = sheet.getRange(row,1,1,10).getValues()[0];
+
+  const timestamp = rowData[0];
+  const entryForeman = rowData[1];
+  const employee = rowData[2];
+  const license = rowData[3];
+  const service = rowData[4];
+
+  const changeTime = new Date();
+
+  // Determine which foreman is currently active
+  const data = sheet.getDataRange().getValues();
+  let activeForeman = "Unknown";
+
+  for (let i = 1; i < data.length; i++) {
+
+    const t = new Date(data[i][0]);
+
+    if (t <= changeTime) {
+      activeForeman = data[i][1];
+    } else {
+      break;
+    }
+
+  }
+
+  const logSheet = e.source.getSheetByName("PriceAudit");
+
+  logSheet.appendRow([
+    changeTime,
+    timestamp,
+    license,
+    service,
+    employee,
+    entryForeman,
+    oldValue,
+    newValue,
+    activeForeman
+  ]);
+}
 
 
 function processFormSubmission() {
@@ -545,11 +613,58 @@ function emailPerformanceReport() {
     `${fileDate}_Al_Raked_Performance_Report.pdf`
   );
 
-  // 5. Email the PDF
+  const auditSheet = ss.getSheetByName("PriceAudit");
+  const auditData = auditSheet.getDataRange().getValues();
+
+  let changes = [];
+
+  for (let i = 1; i < auditData.length; i++) {
+
+    const row = auditData[i];
+
+    const changeTime = new Date(row[0]);
+
+    const todayStr = today.toDateString();
+
+    if (changeTime.toDateString() === todayStr) {
+
+      const changeTimeText = Utilities.formatDate(changeTime,timeZone,"dd/MM/yyyy HH:mm");
+
+      const entryTimeText = Utilities.formatDate(
+        new Date(row[1]),
+        timeZone,
+        "dd/MM/yyyy HH:mm"
+      );
+
+      changes.push(
+        `Change Time: ${changeTimeText}
+  Original Entry: ${entryTimeText}
+  Plate: ${row[2]}
+  Service: ${row[3]}
+  Employee: ${row[4]}
+  Entry Foreman: ${row[5]}
+  Old Price: ${row[6]}
+  New Price: ${row[7]}
+  Foreman at Time of Change: ${row[8]}
+  `
+      );
+
+    }
+
+  }
+
+  let auditText = "No price changes recorded today.";
+
+  if (changes.length) {
+    auditText = "PRICE CHANGES TODAY\n\n" + changes.join("\n");
+  }
+
   MailApp.sendEmail({
-    to: "alrakedcarwashingstation@gmail.com",
+    to: "alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
     subject: `${subjectDate} - Al Raked Performance Report`,
-    body: "Attached is the daily performance report for today.",
+    body:
+      "Attached is the daily performance report.\n\n" +
+      auditText,
     attachments: [blob]
   });
 }
@@ -569,7 +684,7 @@ function createTriggers() {
   ScriptApp.newTrigger("calc")
     .timeBased()
     .atHour(23)
-    .nearMinute(30)
+    .nearMinute(15)
     .everyDays(1)
     .create();
 
@@ -577,7 +692,7 @@ function createTriggers() {
   ScriptApp.newTrigger("emailPerformanceReport")
     .timeBased()
     .atHour(23)
-    .nearMinute(45)
+    .nearMinute(30)
     .everyDays(1)
     .create();
 }
@@ -591,6 +706,10 @@ function onFormSubmit(e) {
 
   // 3. Update the performance report
   calc();
+}
+
+function onEdit(e) {
+  detectPriceChange(e);
 }
 
 //Duplicating sheet once a month
