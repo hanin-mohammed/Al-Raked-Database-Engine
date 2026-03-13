@@ -403,7 +403,6 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
 
 }
-
 function detectPriceChange(e) {
 
   const sheetName = "Form Responses 1";
@@ -412,12 +411,12 @@ function detectPriceChange(e) {
 
   const row = e.range.getRow();
   const col = e.range.getColumn();
-
   if (row === 1) return;
 
   const SERVICE_COL = 5;
   const PRICE_COL = 6;
-  const SERVICE_TRACK_COL = 11;
+
+  if (col !== SERVICE_COL && col !== PRICE_COL) return;
 
   const rowData = sheet.getRange(row,1,1,10).getValues()[0];
 
@@ -426,43 +425,34 @@ function detectPriceChange(e) {
   const employee = rowData[2];
   const license = rowData[3];
   const currentService = rowData[4];
-  const props = PropertiesService.getDocumentProperties();
-  const key = "service_" + new Date(timestamp).getTime() + "_" + license;
+  const currentPrice = rowData[5];
 
   const changeTime = new Date();
 
   const logSheet = e.source.getSheetByName("PriceAudit");
 
-  // --- SERVICE CHANGE TRACKING (no logging) ---
-// --- SERVICE CHANGE TRACKING ---
+  // highlight edited cell
+  sheet.getRange(row, col).setBackground("#f7c6c6");
+
+  let oldService = currentService;
+  let newService = currentService;
+  let oldPrice = currentPrice;
+  let newPrice = currentPrice;
+
   if (col === SERVICE_COL) {
-
-    // store original service only once
-    if (!props.getProperty(key) && e.oldValue) {
-      props.setProperty(key, e.oldValue);
-    }
-
-    // highlight edited service cell
-    sheet.getRange(row, SERVICE_COL).setBackground("#f7c6c6");
-
-    return;
+    oldService = e.oldValue || currentService;
+    newService = e.value;
   }
 
-  // --- PRICE CHANGE ---
-  if (col !== PRICE_COL) return;
+  if (col === PRICE_COL) {
+    if (typeof e.oldValue === "undefined") return;
+    if (e.oldValue == e.value) return;
 
-  if (typeof e.oldValue === "undefined") return;
-  if (e.oldValue == e.value) return;
+    oldPrice = e.oldValue;
+    newPrice = e.value;
+  }
 
-  const oldValue = e.oldValue;
-  const newValue = e.value;
-
-  const originalService = props.getProperty(key) || currentService;
-  const newService = currentService;
-
-  // highlight edited price
-  sheet.getRange(row, PRICE_COL).setBackground("#f7c6c6");
-
+  // determine active foreman at change time
   const data = sheet.getDataRange().getValues();
   let activeForeman = "Unknown";
 
@@ -478,40 +468,66 @@ function detectPriceChange(e) {
 
   }
 
-// insert new row under header
-  logSheet.insertRowAfter(1);
+  // check if audit entry already exists
+  const auditData = logSheet.getDataRange().getValues();
+  let existingRow = null;
 
-  const newRow = 2;
+  for (let i = 1; i < auditData.length; i++) {
 
-  logSheet.getRange(newRow,1,1,10).setValues([[
+    const logTimestamp = new Date(auditData[i][1]).getTime();
+    const logLicense = auditData[i][2];
+
+    if (
+      logTimestamp === new Date(timestamp).getTime() &&
+      logLicense === license
+    ) {
+      existingRow = i + 1;
+      break;
+    }
+
+  }
+
+  const rowValues = [
     changeTime,
     timestamp,
     license,
-    originalService,
+    oldService,
     newService,
     employee,
     entryForeman,
-    oldValue,
-    newValue,
+    oldPrice,
+    newPrice,
     activeForeman
-  ]]);
+  ];
 
-  SpreadsheetApp.flush();
+  if (existingRow) {
 
-  // copy formatting from template row
-  const templateRow = logSheet.getLastRow() >= 3 ? 3 : 2;
-  const template = logSheet.getRange(templateRow,1,1,10);
+    logSheet.getRange(existingRow,1,1,10).setValues([rowValues]);
 
-  template.copyFormatToRange(
-    logSheet,
-    1,
-    10,
-    newRow,
-    newRow
-  );
-  props.deleteProperty(key);
+  } else {
+
+    logSheet.insertRowAfter(1);
+
+    const newRow = 2;
+
+    logSheet.getRange(newRow,1,1,10).setValues([rowValues]);
+
+    SpreadsheetApp.flush();
+
+    const templateRow = logSheet.getLastRow() >= 3 ? 3 : 2;
+
+    logSheet.getRange(templateRow,1,1,10).copyFormatToRange(
+      logSheet,
+      1,
+      10,
+      newRow,
+      newRow
+    );
+
+  }
 
 }
+
 
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
