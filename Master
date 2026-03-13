@@ -455,7 +455,6 @@ function detectPriceChange(e) {
   }
 
   const logSheet = e.source.getSheetByName("PriceAudit");
-
   logSheet.appendRow([
     changeTime,
     timestamp,
@@ -467,6 +466,21 @@ function detectPriceChange(e) {
     newValue,
     activeForeman
   ]);
+
+  SpreadsheetApp.flush(); // ensure sheet updates
+
+  const lastRow = logSheet.getLastRow();
+
+  // Sort by Change Time (Column A) newest first
+  if (lastRow > 2) {
+    logSheet.getRange(2, 1, lastRow - 1, 9).sort({ column: 1, ascending: false });
+  }
+
+  // Copy formatting from row below the newest entry
+  if (lastRow > 3) {
+    const source = logSheet.getRange(3, 1, 1, 9);
+    source.copyFormatToRange(logSheet, 1, 9, 2, 2);
+  }
 }
 
 
@@ -759,3 +773,6 @@ function createMonthEndTrigger() {
     .everyDays(1)
     .create();
 }
+
+
+
