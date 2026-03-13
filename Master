@@ -426,6 +426,8 @@ function detectPriceChange(e) {
   const employee = rowData[2];
   const license = rowData[3];
   const currentService = rowData[4];
+  const props = PropertiesService.getDocumentProperties();
+  const key = "service_" + new Date(timestamp).getTime() + "_" + license;
 
   const changeTime = new Date();
 
@@ -434,8 +436,10 @@ function detectPriceChange(e) {
   // --- SERVICE CHANGE TRACKING (no logging) ---
   if (col === SERVICE_COL) {
 
-    // store latest service silently
-    sheet.getRange(row, SERVICE_TRACK_COL).setValue(e.value);
+    // store original service only once
+    if (!props.getProperty(key) && e.oldValue) {
+      props.setProperty(key, e.oldValue);
+    }
 
     return;
   }
@@ -449,7 +453,8 @@ function detectPriceChange(e) {
   const oldValue = e.oldValue;
   const newValue = e.value;
 
-  const storedService = sheet.getRange(row, SERVICE_TRACK_COL).getValue() || currentService;
+  const originalService = props.getProperty(key) || currentService;
+  const newService = currentService;
 
   // highlight edited price
   sheet.getRange(row, PRICE_COL).setBackground("#f7c6c6");
@@ -469,36 +474,40 @@ function detectPriceChange(e) {
 
   }
 
-  logSheet.appendRow([
+// insert new row under header
+  logSheet.insertRowAfter(1);
+
+  const newRow = 2;
+
+  logSheet.getRange(newRow,1,1,10).setValues([[
     changeTime,
     timestamp,
     license,
-    storedService,     // service before edit
-    currentService,    // service at price change
+    originalService,
+    newService,
     employee,
     entryForeman,
     oldValue,
     newValue,
     activeForeman
-  ]);
+  ]]);
 
   SpreadsheetApp.flush();
 
-  const lastRow = logSheet.getLastRow();
+  // copy formatting from template row
+  const templateRow = logSheet.getLastRow() >= 3 ? 3 : 2;
+  const template = logSheet.getRange(templateRow,1,1,10);
 
-  if (lastRow > 2) {
-    logSheet.getRange(2,1,lastRow-1,10).sort({ column:1, ascending:false });
-  }
+  template.copyFormatToRange(
+    logSheet,
+    1,
+    10,
+    newRow,
+    newRow
+  );
+  props.deleteProperty(key);
 
-  if (lastRow > 3) {
-    const source = logSheet.getRange(3,1,1,10);
-    source.copyFormatToRange(logSheet,1,10,2,2);
-  }
-
-  // update stored service after logging
-  sheet.getRange(row, SERVICE_TRACK_COL).setValue(currentService);
 }
-
 
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -668,15 +677,15 @@ function emailPerformanceReport() {
 
       changes.push(
   `Change Time: ${changeTimeText}
-  Original Entry: ${entryTimeText}
-  Plate: ${row[2]}
-  Original Service: ${row[3]}
-  Service At Price Change: ${row[4]}
-  Employee: ${row[5]}
-  Entry Foreman: ${row[6]}
-  Old Price: ${row[7]}
-  New Price: ${row[8]}
-  Foreman at Time of Change: ${row[9]}
+Original Entry: ${entryTimeText}
+Plate: ${row[2]}
+Original Service: ${row[3]}
+Service At Price Change: ${row[4]}
+Employee: ${row[5]}
+Entry Foreman: ${row[6]}
+Old Price: ${row[7]}
+New Price: ${row[8]}
+Foreman at Time of Change: ${row[9]}
   `
 );
 
@@ -790,6 +799,3 @@ function createMonthEndTrigger() {
     .everyDays(1)
     .create();
 }
-
-
-
