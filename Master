@@ -403,131 +403,189 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
 
 }
-function detectPriceChange(e) {
 
-  const sheetName = "Form Responses 1";
-  const sheet = e.source.getActiveSheet();
-  if (sheet.getName() !== sheetName) return;
+function onEdit(e) {
 
-  const row = e.range.getRow();
-  const col = e.range.getColumn();
-  if (row === 1) return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
 
-  const SERVICE_COL = 5;
-  const PRICE_COL = 6;
+  try {
 
-  if (col !== SERVICE_COL && col !== PRICE_COL) return;
+    const MAIN = "Form Responses 1";
+    const AUDIT = "PriceAudit";
 
-  const rowData = sheet.getRange(row,1,1,10).getValues()[0];
+    const SERVICE_COL = 5;
+    const PRICE_COL = 6;
 
-  const timestamp = rowData[0];
-  const entryForeman = rowData[1];
-  const employee = rowData[2];
-  const license = rowData[3];
-  const currentService = rowData[4];
-  const currentPrice = rowData[5];
+    const sheet = e.range.getSheet();
+    if (sheet.getName() !== MAIN) return;
 
-  const changeTime = new Date();
+    const row = e.range.getRow();
+    const col = e.range.getColumn();
 
-  const logSheet = e.source.getSheetByName("PriceAudit");
+    if (row === 1) return;
+    if (col !== SERVICE_COL && col !== PRICE_COL) return;
 
-  // highlight edited cell
-  sheet.getRange(row, col).setBackground("#f7c6c6");
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const audit = ss.getSheetByName(AUDIT);
 
-  let oldService = currentService;
-  let newService = currentService;
-  let oldPrice = currentPrice;
-  let newPrice = currentPrice;
+    const rowData = sheet.getRange(row,1,1,10).getValues()[0];
 
-  if (col === SERVICE_COL) {
-    oldService = e.oldValue || currentService;
-    newService = e.value;
-  }
+    const timestamp = rowData[0];
+    const entryForeman = rowData[1];
+    const employee = rowData[2];
+    const license = rowData[3];
 
-  if (col === PRICE_COL) {
-    if (typeof e.oldValue === "undefined") return;
-    if (e.oldValue == e.value) return;
+    const service = rowData[4];
+    const price = rowData[5];
 
-    oldPrice = e.oldValue;
-    newPrice = e.value;
-  }
+    const changeTime = new Date();
 
-  // determine active foreman at change time
-  const data = sheet.getDataRange().getValues();
-  let activeForeman = "Unknown";
+    sheet.getRange(row,col).setBackground("#f7c6c6");
 
-  for (let i = 1; i < data.length; i++) {
+    let oldService = service;
+    let newService = service;
 
-    const t = new Date(data[i][0]);
+    let oldPrice = price;
+    let newPrice = price;
 
-    if (t <= changeTime) {
-      activeForeman = data[i][1];
+    if (col === SERVICE_COL) {
+
+      oldService = e.oldValue || "";
+      newService = service;
+
+    }
+
+    if (col === PRICE_COL) {
+
+      if (typeof e.oldValue === "undefined") return;
+
+      oldPrice = e.oldValue;
+      newPrice = price;
+
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let activeForeman = entryForeman;
+
+    for (let i = 1; i < data.length; i++) {
+
+      const t = new Date(data[i][0]);
+
+      if (t <= changeTime) {
+        activeForeman = data[i][1];
+      } else {
+        break;
+      }
+
+    }
+
+    const lastRow = audit.getLastRow();
+
+    let existingRow = null;
+
+    if (lastRow >= 2) {
+
+      const newest = audit.getRange(2,1,1,10).getValues()[0];
+
+      const logTime = new Date(newest[1]).getTime();
+      const logPlate = newest[2];
+
+      if (
+        logTime === new Date(timestamp).getTime() &&
+        logPlate === license
+      ) {
+        existingRow = 2;
+      }
+
+    }
+
+    const values = [
+      changeTime,
+      timestamp,
+      license,
+      oldService,
+      newService,
+      employee,
+      entryForeman,
+      oldPrice,
+      newPrice,
+      activeForeman
+    ];
+
+    if (existingRow) {
+
+      const prev = audit.getRange(existingRow,1,1,10).getValues()[0];
+
+      let finalOldService = prev[3];
+      let finalNewService = prev[4];
+      let finalOldPrice = prev[7];
+      let finalNewPrice = prev[8];
+
+      if (col === SERVICE_COL) {
+
+        finalOldService = prev[3] || oldService;
+        finalNewService = newService;
+
+      }
+
+      if (col === PRICE_COL) {
+
+        finalOldPrice = prev[7] || oldPrice;
+        finalNewPrice = newPrice;
+
+      }
+
+      const mergedValues = [
+        changeTime,
+        timestamp,
+        license,
+        finalOldService,
+        finalNewService,
+        employee,
+        entryForeman,
+        finalOldPrice,
+        finalNewPrice,
+        activeForeman
+      ];
+
+      audit.getRange(existingRow,1,1,10).setValues([mergedValues]);
+
     } else {
-      break;
+
+      audit.insertRowAfter(1);
+
+      const newRow = 2;
+
+      audit.getRange(newRow,1,1,10).setValues([values]);
+
+   
+
+      SpreadsheetApp.flush();
+
+      // Copy formatting template from Row 1 (K–T) → new row (A–J)
+      audit.getRange(1, 11, 1, 10)
+        .copyTo(audit.getRange(newRow, 1, 1, 10), { formatOnly: true });
+
+      audit.getRange(newRow,1,1,10)
+        .setFontColor("black");
+
     }
 
-  }
+    if (audit.getLastRow() > 2) {
 
-  // check if audit entry already exists
-  const auditData = logSheet.getDataRange().getValues();
-  let existingRow = null;
+      audit.getRange(2,1,audit.getLastRow()-1,10)
+        .sort({column:1,ascending:false});
 
-  for (let i = 1; i < auditData.length; i++) {
-
-    const logTimestamp = new Date(auditData[i][1]).getTime();
-    const logLicense = auditData[i][2];
-
-    if (
-      logTimestamp === new Date(timestamp).getTime() &&
-      logLicense === license
-    ) {
-      existingRow = i + 1;
-      break;
     }
 
-  }
+  } finally {
 
-  const rowValues = [
-    changeTime,
-    timestamp,
-    license,
-    oldService,
-    newService,
-    employee,
-    entryForeman,
-    oldPrice,
-    newPrice,
-    activeForeman
-  ];
-
-  if (existingRow) {
-
-    logSheet.getRange(existingRow,1,1,10).setValues([rowValues]);
-
-  } else {
-
-    logSheet.insertRowAfter(1);
-
-    const newRow = 2;
-
-    logSheet.getRange(newRow,1,1,10).setValues([rowValues]);
-
-    SpreadsheetApp.flush();
-
-    const templateRow = logSheet.getLastRow() >= 3 ? 3 : 2;
-
-    logSheet.getRange(templateRow,1,1,10).copyFormatToRange(
-      logSheet,
-      1,
-      10,
-      newRow,
-      newRow
-    );
+    lock.releaseLock();
 
   }
 
 }
-
 
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -768,9 +826,7 @@ function onFormSubmit(e) {
   calc();
 }
 
-function handleEdit(e) {
-  detectPriceChange(e);
-}
+
 
 //Duplicating sheet once a month
 
