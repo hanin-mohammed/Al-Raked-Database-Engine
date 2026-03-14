@@ -1051,7 +1051,7 @@ function emailMonthlyReport() {
 
   MailApp.sendEmail({
 
-  to: "imhaninmohd@gmail.com, captainahdin@gmail.com, alrakedcarwashingstation@gmail.com",
+  to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com",
     subject: `Al Raked Monthly Earnings Report - ${monthName}`,
 
     body:
