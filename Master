@@ -809,6 +809,229 @@ function emailPerformanceReport() {
 
 }
 
+
+function emailMonthlyReport() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Form Responses 1");
+
+  const today = new Date();
+  const tz = Session.getScriptTimeZone();
+
+  const monthName = Utilities.formatDate(today, tz, "MMMM yyyy");
+  const fileDate = Utilities.formatDate(today, tz, "MMMM_yyyy");
+
+  const email = "imhaninmohd@gmail.com";
+
+  // Generate latest report
+  calc();
+
+  SpreadsheetApp.flush();
+
+
+  // ---------------------------
+  // 1. COPY PERFORMANCE REPORT
+  // ---------------------------
+
+  const reportSheetName = "TEMP_MONTHLY_REPORT";
+  const logSheetName = "TEMP_PRIVATE_LOG";
+
+  if (ss.getSheetByName(reportSheetName)) ss.deleteSheet(ss.getSheetByName(reportSheetName));
+  if (ss.getSheetByName(logSheetName)) ss.deleteSheet(ss.getSheetByName(logSheetName));
+
+  const tempReport = ss.insertSheet(reportSheetName);
+
+  // Copy the report block (M:R area)
+  const reportRange = sheet.getRange("M1:R400");
+
+  reportRange.copyTo(tempReport.getRange("A1"), {contentsOnly:false});
+  // Ensure readable PDF layout
+  tempReport.setColumnWidths(1, 6, 140); // Fit A–F across page
+  tempReport.setColumnWidth(1, 260);     // Wider title column
+  tempReport.getRange("A1:F400").setWrap(true);
+  tempReport.setFrozenRows(2);
+
+
+  // -----------------------------------
+  // 2. CHANGE REPORT TITLE
+  // -----------------------------------
+
+  tempReport.getRange("A2").setValue(`AL RAKED EARNINGS REPORT ${monthName}`);
+
+
+  // -----------------------------------
+  // 3. REMOVE PRIVATE OFFICE LOG
+  // -----------------------------------
+
+  const values = tempReport.getDataRange().getValues();
+
+  for (let i = 0; i < values.length; i++) {
+
+    const cell = values[i][0];
+
+    if (cell && cell.toString().includes("PRIVATE OFFICE VEHICLE LOG")) {
+
+      tempReport.deleteRows(i+1, values.length-i);
+      break;
+
+    }
+
+  }
+
+
+  // -----------------------------------
+  // 4. EXPORT REPORT PDF
+  // -----------------------------------
+
+  const pdfUrl =
+    `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+    `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+    `&pagenumbers=false&gridlines=false&fzr=false&gid=${tempReport.getSheetId()}`;
+
+  const options = {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
+  };
+
+  const pdfBlob = UrlFetchApp.fetch(pdfUrl, options)
+    .getBlob()
+    .setName(`Al_Raked_Earnings_Report_${fileDate}.pdf`);
+
+
+
+
+  // -----------------------------------
+  // EXTRACT PRIVATE OFFICE LOG DIRECTLY
+  // -----------------------------------
+
+  const reportData = sheet.getRange("M1:R400").getValues();
+
+  let headerRow = -1;
+
+  // locate the log section
+  for (let i = 0; i < reportData.length; i++) {
+
+    if (
+      reportData[i][0] &&
+      reportData[i][0].toString().includes("PRIVATE OFFICE VEHICLE LOG")
+    ) {
+      headerRow = i + 1;
+      break;
+    }
+
+  }
+
+  const tempLog = ss.insertSheet(logSheetName);
+
+  if (headerRow !== -1) {
+
+    let rows = [];
+
+    for (let i = headerRow; i < reportData.length; i++) {
+
+      const row = reportData[i];
+
+      // stop when the table ends
+      if (row.join("").trim() === "") break;
+
+      rows.push(row);
+
+    }
+
+    if (rows.length) {
+      tempLog.getRange(1,1,rows.length,rows[0].length).setValues(rows);
+    }
+
+  }
+
+
+
+  // -----------------------------------
+  // 6. EXPORT EXCEL FILE
+  // -----------------------------------
+
+  // -----------------------------------
+  // EXPORT PRIVATE OFFICE LOG AS XLSX
+  // -----------------------------------
+
+  const tempSpreadsheet = SpreadsheetApp.create("TEMP_PRIVATE_LOG_EXPORT");
+  const exportSheet = tempSpreadsheet.getSheets()[0];
+
+  const logData = tempLog.getDataRange().getValues();
+
+  if (logData.length > 0) {
+    exportSheet.getRange(1,1,logData.length,logData[0].length).setValues(logData);
+  }
+
+  SpreadsheetApp.flush();
+
+  const xlsxUrl =
+    `https://docs.google.com/spreadsheets/d/${tempSpreadsheet.getId()}/export?format=xlsx`;
+
+  const excelBlob = UrlFetchApp.fetch(xlsxUrl, options)
+    .getBlob()
+    .setName(`Private_Office_Log_${fileDate}.xlsx`);
+
+  // cleanup spreadsheet
+  DriveApp.getFileById(tempSpreadsheet.getId()).setTrashed(true);
+
+
+
+
+  // -----------------------------------
+  // 7. SEND EMAIL
+  // -----------------------------------
+
+  MailApp.sendEmail({
+
+    to: email,
+    subject: `Al Raked Monthly Earnings Report - ${monthName}`,
+
+    body:
+      "Attached are the monthly reports.\n\n" +
+      "1. Earnings report (PDF)\n" +
+      "2. Private Office vehicle log (Excel)",
+
+    attachments: [pdfBlob, excelBlob]
+
+  });
+
+
+
+  // -----------------------------------
+  // 8. CLEAN UP
+  // -----------------------------------
+
+  ss.deleteSheet(tempReport);
+  ss.deleteSheet(tempLog);
+
+}
+
+
+
+function createMonthlyEmailTrigger() {
+
+  const triggers = ScriptApp.getProjectTriggers();
+
+  for (const t of triggers) {
+
+    if (t.getHandlerFunction() === "emailMonthlyReport") {
+
+      ScriptApp.deleteTrigger(t);
+
+    }
+
+  }
+
+  ScriptApp.newTrigger("emailMonthlyReport")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(50)
+    .everyDays(1)
+    .create();
+
+}
+
+
 function createTriggers() {
   // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
