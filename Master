@@ -700,91 +700,113 @@ function onOpen() {
 }
 
 function emailPerformanceReport() {
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Form Responses 1");
+  const auditSheet = ss.getSheetByName("PriceAudit");
 
-  // 1. Generate latest report
+  // Generate latest performance report
   calc();
 
-  // 2. Format the date for subject and file name
   const today = new Date();
   const timeZone = Session.getScriptTimeZone();
-  
-  // Full month name for both
-  const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy"); // e.g., August 3, 2025
-  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy")      // e.g., August 3 2025
-    .replace(/ /g, "_"); // Convert spaces to underscores for file name
 
-  // 3. Create PDF export link for the active sheet
-  const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf&` +
-    `size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+  const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy");
+  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy").replace(/ /g,"_");
+
+  // MAIN REPORT PDF
+  const url =
+    `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+    `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
     `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
 
   const options = {
     headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
   };
 
-  // 4. Fetch PDF file
-  const response = UrlFetchApp.fetch(url, options);
-  const blob = response.getBlob().setName(
-    `${fileDate}_Al_Raked_Performance_Report.pdf`
-  );
+  const mainPdf = UrlFetchApp.fetch(url, options)
+    .getBlob()
+    .setName(`${fileDate}_Al_Raked_Performance_Report.pdf`);
 
-  const auditSheet = ss.getSheetByName("PriceAudit");
+
+  // ---------- PRICE AUDIT PROCESS ----------
+
   const auditData = auditSheet.getDataRange().getValues();
+  const header = auditData[0];
 
-  let changes = [];
+  let rowsToday = [];
 
   for (let i = 1; i < auditData.length; i++) {
 
-    const row = auditData[i];
+    const changeTime = new Date(auditData[i][0]);
 
-    const changeTime = new Date(row[0]);
-
-    const todayStr = today.toDateString();
-
-    if (changeTime.toDateString() === todayStr) {
-
-      const changeTimeText = Utilities.formatDate(changeTime,timeZone,"dd/MM/yyyy HH:mm");
-
-      const entryTimeText = Utilities.formatDate(
-        new Date(row[1]),
-        timeZone,
-        "dd/MM/yyyy HH:mm"
-      );
-
-      changes.push(
-  `Change Time: ${changeTimeText}
-Original Entry Time: ${entryTimeText}
-License Plate: ${row[2]}
-Original Service: ${row[3]}
-New Service: ${row[4]}
-Employee: ${row[5]}
-Entry Foreman: ${row[6]}
-Old Price: ${row[7]}
-New Price: ${row[8]}
-Foreman at Time of Change: ${row[9]}
-  `
-);
-
+    if (changeTime.toDateString() === today.toDateString()) {
+      rowsToday.push(auditData[i]);
     }
 
   }
 
+  let attachments = [mainPdf];
   let auditText = "No price changes recorded today.";
 
-  if (changes.length) {
-    auditText = "PRICE CHANGES TODAY\n\n" + changes.join("\n");
+  if (rowsToday.length > 0) {
+
+    const tempName = "TEMP_AUDIT_EXPORT";
+
+    let temp = ss.getSheetByName(tempName);
+
+    if (temp) ss.deleteSheet(temp);
+
+    temp = ss.insertSheet(tempName);
+
+    const headerRange = auditSheet.getRange(1,1,1,10);
+    headerRange.copyTo(temp.getRange(1,1), {contentsOnly:false});
+
+    let writeRow = 2;
+
+    for (let i = 1; i < auditData.length; i++) {
+
+      const changeTime = new Date(auditData[i][0]);
+
+      if (changeTime.toDateString() === today.toDateString()) {
+
+        auditSheet.getRange(i+1,1,1,10)
+          .copyTo(temp.getRange(writeRow,1), {contentsOnly:false});
+
+        writeRow++;
+
+      }
+    }
+
+    SpreadsheetApp.flush();
+
+    const auditUrl =
+      `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+      `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+      `&pagenumbers=false&gridlines=true&fzr=false&gid=${temp.getSheetId()}`;
+
+    const auditPdf = UrlFetchApp.fetch(auditUrl, options)
+      .getBlob()
+      .setName(`${fileDate}_Price_Audit.pdf`);
+
+    attachments.push(auditPdf);
+
+    auditText = `${rowsToday.length} price change(s) recorded today. See attached audit report.`;
+
+    ss.deleteSheet(temp);
   }
 
+
+  // SEND EMAIL
   MailApp.sendEmail({
     to: "alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
     subject: `${subjectDate} - Al Raked Performance Report`,
     body:
       "Attached is the daily performance report.\n\n" +
       auditText,
-    attachments: [blob]
+    attachments: attachments
   });
+
 }
 
 function createTriggers() {
