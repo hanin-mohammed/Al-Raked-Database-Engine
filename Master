@@ -1075,6 +1075,81 @@ function emailMonthlyReport() {
 }
 
 
+function cleanSlateProtocol() {
+
+  const today = new Date();
+  const tz = Session.getScriptTimeZone();
+
+  // SAFETY CHECK
+  if (today.getDate() !== 1) {
+    Logger.log("Clean Slate Protocol aborted: today is not the first of the month.");
+    return;
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheetsToReset = [
+    "Form Responses 1",
+    "PriceAudit"
+  ];
+
+  let clearedSheets = [];
+
+  sheetsToReset.forEach(name => {
+
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+
+    if (lastRow > 1) {
+      sheet.getRange(2,1,lastRow-1,lastCol).clearContent();
+      clearedSheets.push(name);
+    }
+
+  });
+
+  SpreadsheetApp.flush();
+
+  // SEND CONFIRMATION EMAIL
+  const dateText = Utilities.formatDate(today, tz, "MMMM d, yyyy HH:mm");
+
+  MailApp.sendEmail({
+    to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com",
+    subject: "Al Raked Clean Slate Protocol Completed",
+    body:
+      "The monthly system reset has completed successfully.\n\n" +
+      "Time: " + dateText + "\n\n" +
+      "Sheets cleared:\n" +
+      clearedSheets.join("\n") +
+      "\n\nHeaders were preserved. System is ready for the new month."
+  });
+
+}
+
+
+
+function createCleanSlateTrigger() {
+
+  const triggers = ScriptApp.getProjectTriggers();
+
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === "cleanSlateProtocol") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  ScriptApp.newTrigger("cleanSlateProtocol")
+    .timeBased()
+    .onMonthDay(1)
+    .atHour(2)
+    .create();
+
+}
+
+
+
 
 function createMonthlyEmailTrigger() {
 
