@@ -407,7 +407,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
 }
 
-function onEdit(e) {
+function auditPriceChange(e) {
 
   const lock = LockService.getScriptLock();
   lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
@@ -589,6 +589,8 @@ function onEdit(e) {
   }
 
 }
+
+
 
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -1060,6 +1062,24 @@ function createMonthlyEmailTrigger() {
     .create();
 
 }
+
+function createAuditTrigger() {
+
+  const triggers = ScriptApp.getProjectTriggers();
+
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === "auditPriceChange") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  ScriptApp.newTrigger("auditPriceChange")
+    .forSpreadsheet(SpreadsheetApp.getActive())
+    .onEdit()
+    .create();
+
+}
+
 
 
 function createTriggers() {
