@@ -410,7 +410,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 function auditPriceChange(e) {
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
+  lock.waitLock(30000);   // wait up to 5 seconds for previous edit to finish
 
   try {
 
@@ -419,6 +419,7 @@ function auditPriceChange(e) {
 
     const SERVICE_COL = 5;
     const PRICE_COL = 6;
+    const MERGE_WINDOW_MINUTES = 30;
 
     const sheet = e.range.getSheet();
     if (sheet.getName() !== MAIN) return;
@@ -467,6 +468,7 @@ function auditPriceChange(e) {
 
 // Highlight correct row even if sheet sorted
 sheet.getRange(correctRow, col).setBackground("#f7c6c6");
+SpreadsheetApp.flush();
 
     let oldService = service;
     let newService = service;
@@ -520,13 +522,18 @@ sheet.getRange(correctRow, col).setBackground("#f7c6c6");
 
       const newest = audit.getRange(2,1,1,10).getValues()[0];
 
-      const logTime = new Date(newest[1]).getTime();
+      const logTimestamp = new Date(newest[1]).getTime();
       const logPlate = newest[2];
+      const previousChangeTime = new Date(newest[0]).getTime();
 
-      if (
-        logTime === new Date(timestamp).getTime() &&
-        logPlate === license
-      ) {
+      const sameJob =
+        logTimestamp === new Date(timestamp).getTime() &&
+        logPlate === license;
+
+      const minutesSinceLastChange =
+        (changeTime.getTime() - previousChangeTime) / 60000;
+
+      if (sameJob && minutesSinceLastChange <= MERGE_WINDOW_MINUTES) {
         existingRow = 2;
       }
 
