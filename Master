@@ -428,6 +428,10 @@ function auditPriceChange(e) {
 
     if (row === 1) return;
     if (col !== SERVICE_COL && col !== PRICE_COL) return;
+    
+    if (col === SERVICE_COL && e.oldValue === e.value) return;
+    if (col === PRICE_COL && e.oldValue === e.value) return;
+    
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const audit = ss.getSheetByName(AUDIT);
@@ -444,7 +448,25 @@ function auditPriceChange(e) {
 
     const changeTime = new Date();
 
-    sheet.getRange(row,col).setBackground("#f7c6c6");
+    // Re-locate the correct row in case sorting moved it
+    const allData = sheet.getDataRange().getValues();
+    let correctRow = row;
+
+    for (let i = 1; i < allData.length; i++) {
+      const t = allData[i][0];
+      const plate = allData[i][3];
+
+      if (
+        new Date(t).getTime() === new Date(timestamp).getTime() &&
+        plate === license
+      ) {
+        correctRow = i + 1;
+        break;
+      }
+    }
+
+// Highlight correct row even if sheet sorted
+sheet.getRange(correctRow, col).setBackground("#f7c6c6");
 
     let oldService = service;
     let newService = service;
@@ -454,7 +476,14 @@ function auditPriceChange(e) {
 
     if (col === SERVICE_COL) {
 
-      oldService = e.oldValue || "";
+      if (typeof e.oldValue !== "undefined") {
+        oldService = e.oldValue;
+      } else if (existingRow) {
+        oldService = audit.getRange(existingRow,5).getValue();
+      } else {
+        oldService = service;
+      }
+
       newService = service;
 
     }
