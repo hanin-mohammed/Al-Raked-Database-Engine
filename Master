@@ -370,7 +370,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
   // Enterprise Jobs
   if (enterpriseJobs && enterpriseJobs.length) {
     const enterpriseRows = enterpriseJobs.map(row => {
-      const date = row[0] ? Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), "dd/MM/yy") : "";
+    const date = row[0] ? new Date(row[0]) : "";
       const price = parseFloat(row[5]) || 0;
       const formattedPrice = `AED ${price.toLocaleString("en-US")}`;
       return [date, row[3], row[4], formattedPrice, row[6], row[8]]; 
@@ -386,6 +386,9 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
     // Adjust alignment and bold manually after writing
     const startRow = currentRow - enterpriseRows.length - 2; // writeTable moves currentRow
     const sheetRange = sheet.getRange(startRow, 13, enterpriseRows.length, 6);
+    
+    sheet.getRange(startRow, 13, enterpriseRows.length, 1)
+      .setNumberFormat("dd/MM/yy");
 
     // Bold all
     sheetRange.setFontWeight("bold");
@@ -933,13 +936,14 @@ function emailMonthlyReport() {
       // stop when the table ends
       if (row.join("").trim() === "") break;
 
-      rows.push(row);
+      rows.push(row.slice(0,6));
 
     }
 
     if (rows.length) {
       tempLog.getRange(1,1,rows.length,rows[0].length).setValues(rows);
     }
+    
 
   }
 
@@ -962,6 +966,32 @@ function emailMonthlyReport() {
     exportSheet.getRange(1,1,logData.length,logData[0].length).setValues(logData);
   }
 
+  // ---------- FORMAT PRIVATE LOG SHEET ----------
+
+  // column widths
+  exportSheet.setColumnWidth(1, 120); // DATE
+  exportSheet.setColumnWidth(2, 150); // LICENSE PLATE
+  exportSheet.setColumnWidth(3, 160); // SERVICE
+  exportSheet.setColumnWidth(4, 120); // PRICE
+  exportSheet.setColumnWidth(5, 160); // COMPANY
+  exportSheet.setColumnWidth(6, 320); // DETAIL (long text)
+
+  // alignment consistency
+  exportSheet.getRange("A:A").setHorizontalAlignment("center"); // DATE
+  exportSheet.getRange("B:B").setHorizontalAlignment("center"); // PLATE
+  exportSheet.getRange("C:C").setHorizontalAlignment("left");   // SERVICE
+  exportSheet.getRange("D:D").setHorizontalAlignment("right");  // PRICE
+  exportSheet.getRange("E:E").setHorizontalAlignment("left");   // COMPANY
+  exportSheet.getRange("F:F").setHorizontalAlignment("left");   // DETAIL
+
+  // wrap long detail text
+  exportSheet.getRange("F:F").setWrap(true);
+
+  // header formatting
+  exportSheet.getRange("1:1")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center");
+
   SpreadsheetApp.flush();
 
   const xlsxUrl =
@@ -983,7 +1013,7 @@ function emailMonthlyReport() {
 
   MailApp.sendEmail({
 
-    to: email,
+  to: "imhaninmohd@gmail.com, captainahdin@gmail.com, alrakedcarwashingstation@gmail.com",
     subject: `Al Raked Monthly Earnings Report - ${monthName}`,
 
     body:
