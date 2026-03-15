@@ -410,7 +410,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 function auditPriceChange(e) {
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);   // wait up to 5 seconds for previous edit to finish
+  lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
 
   try {
 
@@ -427,8 +427,13 @@ function auditPriceChange(e) {
     const row = e.range.getRow();
     const col = e.range.getColumn();
 
+
     if (row === 1) return;
     if (col !== SERVICE_COL && col !== PRICE_COL) return;
+
+    // Immediate highlight before any sorting can interfere
+    e.range.setBackground("#f7c6c6");
+    SpreadsheetApp.flush();    
     
     if (col === SERVICE_COL && e.oldValue === e.value) return;
     if (col === PRICE_COL && e.oldValue === e.value) return;
@@ -454,65 +459,22 @@ function auditPriceChange(e) {
     let correctRow = row;
 
     for (let i = 1; i < allData.length; i++) {
+
       const t = allData[i][0];
       const plate = allData[i][3];
 
+      if (!t || !plate) continue;
+
       if (
-        new Date(t).getTime() === new Date(timestamp).getTime() &&
-        plate === license
+        Math.abs(new Date(t).getTime() - new Date(timestamp).getTime()) < 2000 &&
+        plate.toString().trim() === license.toString().trim()
       ) {
         correctRow = i + 1;
         break;
       }
-    }
-
-// Highlight correct row even if sheet sorted
-sheet.getRange(correctRow, col).setBackground("#f7c6c6");
-SpreadsheetApp.flush();
-
-    let oldService = service;
-    let newService = service;
-
-    let oldPrice = price;
-    let newPrice = price;
-
-    if (col === SERVICE_COL) {
-
-      if (typeof e.oldValue !== "undefined") {
-        oldService = e.oldValue;
-      } else if (existingRow) {
-        oldService = audit.getRange(existingRow,5).getValue();
-      } else {
-        oldService = service;
-      }
-
-      newService = service;
 
     }
-
-    if (col === PRICE_COL) {
-
-      if (typeof e.oldValue === "undefined") return;
-
-      oldPrice = e.oldValue;
-      newPrice = price;
-
-    }
-
-    const data = sheet.getDataRange().getValues();
-    let activeForeman = entryForeman;
-
-    for (let i = 1; i < data.length; i++) {
-
-      const t = new Date(data[i][0]);
-
-      if (t <= changeTime) {
-        activeForeman = data[i][1];
-      } else {
-        break;
-      }
-
-    }
+    
 
     const lastRow = audit.getLastRow();
 
@@ -537,7 +499,58 @@ SpreadsheetApp.flush();
         existingRow = 2;
       }
 
+    }    
+
+    let oldService = service;
+    let newService = service;
+
+    let oldPrice = price;
+    let newPrice = price;
+
+    if (col === SERVICE_COL) {
+
+      if (typeof e.oldValue !== "undefined") {
+        oldService = e.oldValue;
+      } else if (existingRow) {
+        oldService = audit.getRange(existingRow,5).getValue();
+      } else {
+        oldService = service;
+      }
+
+      newService = service;
+
     }
+
+    if (col === PRICE_COL) {
+
+      if (typeof e.oldValue !== "undefined") {
+        oldPrice = e.oldValue;
+      } else if (existingRow) {
+        oldPrice = audit.getRange(existingRow,8).getValue();
+      } else {
+        oldPrice = price;
+      }
+
+      newPrice = price;
+
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let activeForeman = entryForeman;
+
+    for (let i = 1; i < data.length; i++) {
+
+      const t = new Date(data[i][0]);
+
+      if (t <= changeTime) {
+        activeForeman = data[i][1];
+      } else {
+        break;
+      }
+
+    }
+
+
 
     const values = [
       changeTime,
@@ -553,6 +566,17 @@ SpreadsheetApp.flush();
     ];
 
     if (existingRow) {
+
+      // If user reverted value quickly, remove audit entry
+      if (
+        col === PRICE_COL &&
+        String(oldPrice) === String(newPrice)
+      ) {
+        audit.deleteRow(existingRow);
+
+        sheet.getRange(correctRow, col).setBackground(null);
+        return;
+      }
 
       const prev = audit.getRange(existingRow,1,1,10).getValues()[0];
 
@@ -627,8 +651,75 @@ SpreadsheetApp.flush();
 }
 
 
+function verifyAuditIntegrity() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Form Responses 1");
+  const audit = ss.getSheetByName("PriceAudit");
+
+  const data = sheet.getDataRange().getValues();
+  const auditData = audit.getDataRange().getValues();
+
+  const jobMap = {};
+
+  // Build map of current sheet values
+  for (let i = 1; i < data.length; i++) {
+
+    const timestamp = data[i][0];
+    const plate = data[i][3];
+    const service = data[i][4];
+    const price = data[i][5];
+
+    if (!timestamp || !plate) continue;
+
+    const key = new Date(timestamp).getTime() + "_" + plate;
+
+    jobMap[key] = {
+      service: service,
+      price: price
+    };
+
+  }
+
+  // Scan audit log
+  for (let i = auditData.length - 1; i >= 1; i--) {
+
+    const changeTime = auditData[i][0];
+    const timestamp = auditData[i][1];
+    const plate = auditData[i][2];
+    const oldService = auditData[i][3];
+    const newService = auditData[i][4];
+    const oldPrice = auditData[i][7];
+    const newPrice = auditData[i][8];
+
+    const key = new Date(timestamp).getTime() + "_" + plate;
+
+    if (!jobMap[key]) continue;
+
+    const currentService = jobMap[key].service;
+    const currentPrice = jobMap[key].price;
+
+    const revertedService = String(currentService) === String(oldService);
+    const revertedPrice = String(currentPrice) === String(oldPrice);
+
+    // If job was reverted back to original value, remove audit
+    if (revertedService || revertedPrice) {
+
+      audit.deleteRow(i + 1);
+
+    }
+
+  }
+
+}
+
 
 function processFormSubmission() {
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+
+  try {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const lastRow = sheet.getLastRow();
   const dataLastCol = 11; // A–J
@@ -709,6 +800,12 @@ function processFormSubmission() {
   }
 }
 */
+
+  } finally {
+    lock.releaseLock();
+  }
+
+
 }
 
 // PRICE MENU FUNCTIONS
@@ -741,6 +838,7 @@ function onOpen() {
 }
 
 function emailPerformanceReport() {
+  verifyAuditIntegrity();
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Form Responses 1");
@@ -852,6 +950,7 @@ function emailPerformanceReport() {
 
 
 function emailMonthlyReport() {
+  verifyAuditIntegrity();
 
   const today = new Date();
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -1157,6 +1256,24 @@ function createCleanSlateTrigger() {
 
 }
 
+
+
+function createAuditIntegrityTrigger() {
+
+  const triggers = ScriptApp.getProjectTriggers();
+
+  for (const t of triggers) {
+    if (t.getHandlerFunction() === "verifyAuditIntegrity") {
+      ScriptApp.deleteTrigger(t);
+    }
+  }
+
+  ScriptApp.newTrigger("verifyAuditIntegrity")
+    .timeBased()
+    .everyHours(2)
+    .create();
+
+}
 
 
 
