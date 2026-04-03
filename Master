@@ -410,7 +410,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 function auditPriceChange(e) {
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
+  lock.waitLock(30000);   // wait up to 5 seconds for previous edit to finish
 
   try {
 
@@ -427,13 +427,8 @@ function auditPriceChange(e) {
     const row = e.range.getRow();
     const col = e.range.getColumn();
 
-
     if (row === 1) return;
     if (col !== SERVICE_COL && col !== PRICE_COL) return;
-
-    // Immediate highlight before any sorting can interfere
-    e.range.setBackground("#f7c6c6");
-    SpreadsheetApp.flush();    
     
     if (col === SERVICE_COL && e.oldValue === e.value) return;
     if (col === PRICE_COL && e.oldValue === e.value) return;
@@ -459,22 +454,65 @@ function auditPriceChange(e) {
     let correctRow = row;
 
     for (let i = 1; i < allData.length; i++) {
-
       const t = allData[i][0];
       const plate = allData[i][3];
 
-      if (!t || !plate) continue;
-
       if (
-        Math.abs(new Date(t).getTime() - new Date(timestamp).getTime()) < 2000 &&
-        plate.toString().trim() === license.toString().trim()
+        new Date(t).getTime() === new Date(timestamp).getTime() &&
+        plate === license
       ) {
         correctRow = i + 1;
         break;
       }
+    }
+
+// Highlight correct row even if sheet sorted
+sheet.getRange(correctRow, col).setBackground("#f7c6c6");
+SpreadsheetApp.flush();
+
+    let oldService = service;
+    let newService = service;
+
+    let oldPrice = price;
+    let newPrice = price;
+
+    if (col === SERVICE_COL) {
+
+      if (typeof e.oldValue !== "undefined") {
+        oldService = e.oldValue;
+      } else if (existingRow) {
+        oldService = audit.getRange(existingRow,5).getValue();
+      } else {
+        oldService = service;
+      }
+
+      newService = service;
 
     }
-    
+
+    if (col === PRICE_COL) {
+
+      if (typeof e.oldValue === "undefined") return;
+
+      oldPrice = e.oldValue;
+      newPrice = price;
+
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let activeForeman = entryForeman;
+
+    for (let i = 1; i < data.length; i++) {
+
+      const t = new Date(data[i][0]);
+
+      if (t <= changeTime) {
+        activeForeman = data[i][1];
+      } else {
+        break;
+      }
+
+    }
 
     const lastRow = audit.getLastRow();
 
@@ -499,58 +537,7 @@ function auditPriceChange(e) {
         existingRow = 2;
       }
 
-    }    
-
-    let oldService = service;
-    let newService = service;
-
-    let oldPrice = price;
-    let newPrice = price;
-
-    if (col === SERVICE_COL) {
-
-      if (typeof e.oldValue !== "undefined") {
-        oldService = e.oldValue;
-      } else if (existingRow) {
-        oldService = audit.getRange(existingRow,5).getValue();
-      } else {
-        oldService = service;
-      }
-
-      newService = service;
-
     }
-
-    if (col === PRICE_COL) {
-
-      if (typeof e.oldValue !== "undefined") {
-        oldPrice = e.oldValue;
-      } else if (existingRow) {
-        oldPrice = audit.getRange(existingRow,8).getValue();
-      } else {
-        oldPrice = price;
-      }
-
-      newPrice = price;
-
-    }
-
-    const data = sheet.getDataRange().getValues();
-    let activeForeman = entryForeman;
-
-    for (let i = 1; i < data.length; i++) {
-
-      const t = new Date(data[i][0]);
-
-      if (t <= changeTime) {
-        activeForeman = data[i][1];
-      } else {
-        break;
-      }
-
-    }
-
-
 
     const values = [
       changeTime,
@@ -566,17 +553,6 @@ function auditPriceChange(e) {
     ];
 
     if (existingRow) {
-
-      // If user reverted value quickly, remove audit entry
-      if (
-        col === PRICE_COL &&
-        String(oldPrice) === String(newPrice)
-      ) {
-        audit.deleteRow(existingRow);
-
-        sheet.getRange(correctRow, col).setBackground(null);
-        return;
-      }
 
       const prev = audit.getRange(existingRow,1,1,10).getValues()[0];
 
@@ -651,75 +627,8 @@ function auditPriceChange(e) {
 }
 
 
-function verifyAuditIntegrity() {
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("Form Responses 1");
-  const audit = ss.getSheetByName("PriceAudit");
-
-  const data = sheet.getDataRange().getValues();
-  const auditData = audit.getDataRange().getValues();
-
-  const jobMap = {};
-
-  // Build map of current sheet values
-  for (let i = 1; i < data.length; i++) {
-
-    const timestamp = data[i][0];
-    const plate = data[i][3];
-    const service = data[i][4];
-    const price = data[i][5];
-
-    if (!timestamp || !plate) continue;
-
-    const key = new Date(timestamp).getTime() + "_" + plate;
-
-    jobMap[key] = {
-      service: service,
-      price: price
-    };
-
-  }
-
-  // Scan audit log
-  for (let i = auditData.length - 1; i >= 1; i--) {
-
-    const changeTime = auditData[i][0];
-    const timestamp = auditData[i][1];
-    const plate = auditData[i][2];
-    const oldService = auditData[i][3];
-    const newService = auditData[i][4];
-    const oldPrice = auditData[i][7];
-    const newPrice = auditData[i][8];
-
-    const key = new Date(timestamp).getTime() + "_" + plate;
-
-    if (!jobMap[key]) continue;
-
-    const currentService = jobMap[key].service;
-    const currentPrice = jobMap[key].price;
-
-    const revertedService = String(currentService) === String(oldService);
-    const revertedPrice = String(currentPrice) === String(oldPrice);
-
-    // If job was reverted back to original value, remove audit
-    if (revertedService || revertedPrice) {
-
-      audit.deleteRow(i + 1);
-
-    }
-
-  }
-
-}
-
 
 function processFormSubmission() {
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(5000);
-
-  try {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const lastRow = sheet.getLastRow();
   const dataLastCol = 11; // A–J
@@ -800,12 +709,6 @@ function processFormSubmission() {
   }
 }
 */
-
-  } finally {
-    lock.releaseLock();
-  }
-
-
 }
 
 // PRICE MENU FUNCTIONS
@@ -838,7 +741,6 @@ function onOpen() {
 }
 
 function emailPerformanceReport() {
-  verifyAuditIntegrity();
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Form Responses 1");
@@ -950,7 +852,6 @@ function emailPerformanceReport() {
 
 
 function emailMonthlyReport() {
-  verifyAuditIntegrity();
 
   const today = new Date();
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -1258,24 +1159,6 @@ function createCleanSlateTrigger() {
 
 
 
-function createAuditIntegrityTrigger() {
-
-  const triggers = ScriptApp.getProjectTriggers();
-
-  for (const t of triggers) {
-    if (t.getHandlerFunction() === "verifyAuditIntegrity") {
-      ScriptApp.deleteTrigger(t);
-    }
-  }
-
-  ScriptApp.newTrigger("verifyAuditIntegrity")
-    .timeBased()
-    .everyHours(2)
-    .create();
-
-}
-
-
 
 function createMonthlyEmailTrigger() {
 
@@ -1406,4 +1289,319 @@ function createMonthEndTrigger() {
     .nearMinute(55)
     .everyDays(1)
     .create();
+}
+
+
+
+
+function emailExtendedShiftReport() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Form Responses 1");
+
+  // -------- DATE WINDOW --------
+  const now = new Date();
+  const tz = Session.getScriptTimeZone();
+
+  const start = new Date(now);
+  start.setDate(start.getDate() - 1);
+  start.setHours(0,0,0,0);
+
+  const end = new Date(now);
+  end.setHours(23,59,59,999);
+
+  const data = sheet.getDataRange().getValues();
+
+  // -------- MAPS --------
+  const zeenahMap = {};
+  const empMap = {};
+  const empLastWorkToday = {};
+  const foremanMap = {};
+  const companyMap = {};
+  const oilMap = {};
+  let enterpriseJobs = [];
+
+  let totalTodayIncl = 0, totalMonthIncl = 0;
+  let totalTodayExcl = 0, totalMonthExcl = 0;
+  let carsTodayIncl = 0, carsMonthIncl = 0;
+  let carsTodayExcl = 0, carsMonthExcl = 0;
+
+  const month = now.getMonth();
+  const year = now.getFullYear();
+
+  for (let i = 1; i < data.length; i++) {
+
+    const [timestamp, foreman, employee, licensePlate, service, serviceFee, company, oilChange, companyDetail, specialPrice] = data[i];
+    if (!timestamp) continue;
+
+    const date = new Date(timestamp);
+
+    const isExtended = date >= start && date <= end;
+    const isThisMonth = date.getMonth() === month && date.getFullYear() === year;
+
+    let serviceAmt = 0;
+    if (serviceFee && serviceFee.toString().toLowerCase() !== "free") {
+      serviceAmt = parseFloat(serviceFee) || 0;
+    }
+
+    let actualAmt = (specialPrice !== "" && specialPrice != null)
+      ? parseFloat(specialPrice) || 0
+      : serviceAmt;
+
+    const empNames = (employee || "").toString().split(",").map(e => e.trim()).filter(e => e);
+    const foremanName = (foreman || "").toString().trim();
+
+    if (!empNames.length || !foremanName) continue;
+
+    const isCompanyJob = company && company.toString().trim() !== "";
+
+    // -------- ENTERPRISE --------
+    if ((companyDetail && companyDetail.toString().trim() !== "") ||
+        (company && company.toString().trim() === "Private Office")) {
+      enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, actualAmt, company, oilChange, companyDetail]);
+    }
+
+    // -------- INIT --------
+    if (!foremanMap[foremanName]) {
+      foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+    }
+
+    // -------- SPECIAL SERVICES --------
+    const specialServices = ["Zeena", "Perfume", "Wipers"];
+    if (specialServices.includes(service)) {
+      if (!zeenahMap[service]) zeenahMap[service] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+
+      if (isExtended) {
+        zeenahMap[service].dailyCars++;
+        zeenahMap[service].dailyAmt += serviceAmt;
+      }
+      if (isThisMonth) {
+        zeenahMap[service].monthlyCars++;
+        zeenahMap[service].monthlyAmt += serviceAmt;
+      }
+    }
+
+    // -------- COMPANY --------
+    if (isCompanyJob) {
+      if (!companyMap[company]) {
+        companyMap[company] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      }
+
+      if (isExtended) {
+        companyMap[company].dailyAmt += serviceAmt;
+        companyMap[company].dailyCars++;
+      }
+      if (isThisMonth) {
+        companyMap[company].monthlyAmt += serviceAmt;
+        companyMap[company].monthlyCars++;
+      }
+    }
+
+    // -------- OIL --------
+    if (oilChange && oilChange.toString().trim() !== "") {
+      if (!oilMap[oilChange]) oilMap[oilChange] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+
+      if (isExtended) {
+        oilMap[oilChange].dailyAmt += serviceAmt;
+        oilMap[oilChange].dailyCars++;
+      }
+      if (isThisMonth) {
+        oilMap[oilChange].monthlyAmt += serviceAmt;
+        oilMap[oilChange].monthlyCars++;
+      }
+    }
+
+    // -------- EMPLOYEE --------
+    const splitAmt = serviceAmt / empNames.length;
+
+    empNames.forEach(name => {
+      if (!empMap[name]) empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+
+      if (isExtended) {
+        empMap[name].daily += splitAmt;
+        empMap[name].carsToday++;
+
+        if (!empLastWorkToday[name] || date > empLastWorkToday[name]) {
+          empLastWorkToday[name] = date;
+        }
+      }
+
+      if (isThisMonth) {
+        empMap[name].monthly += splitAmt;
+        empMap[name].carsMonth++;
+      }
+    });
+
+    // -------- FOREMAN --------
+    if (!isCompanyJob) {
+      if (isExtended) {
+        foremanMap[foremanName].daily += serviceAmt;
+        foremanMap[foremanName].carsToday++;
+      }
+      if (isThisMonth) {
+        foremanMap[foremanName].monthly += serviceAmt;
+        foremanMap[foremanName].carsMonth++;
+      }
+    }
+
+    // -------- TOTALS --------
+    if (isExtended) {
+      carsTodayIncl++;
+      totalTodayIncl += actualAmt;
+
+      if (!isCompanyJob) {
+        carsTodayExcl++;
+        totalTodayExcl += actualAmt;
+      }
+    }
+
+    if (isThisMonth) {
+      carsMonthIncl++;
+      totalMonthIncl += actualAmt;
+
+      if (!isCompanyJob) {
+        carsMonthExcl++;
+        totalMonthExcl += actualAmt;
+      }
+    }
+  }
+
+  // -------- RENDER REPORT --------
+  sheet.getRange("M1:R400").clearContent().clearFormat();
+
+  const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
+  let currentRow = 2;
+
+  sheet.getRange(currentRow, 13, 1, 5).merge()
+    .setValue("EXTENDED SHIFT REPORT")
+    .setFontWeight("bold")
+    .setFontSize(18)
+    .setHorizontalAlignment("center");
+
+  currentRow++;
+
+  sheet.getRange(currentRow, 13, 1, 5).merge()
+    .setValue("Yesterday + Today Combined")
+    .setHorizontalAlignment("center");
+
+  currentRow += 2;
+
+  // -------- SUMMARY (IDENTICAL STRUCTURE) --------
+  const summaryDataExcl = [
+    ["Earnings Today", formatMoney(totalTodayExcl)],
+    ["Cars Washed Today", carsTodayExcl],
+    ["Monthly Earnings", formatMoney(totalMonthExcl)],
+    ["Cars Washed this Month", carsMonthExcl]
+  ];
+
+  const summaryDataIncl = [
+    ["Earnings Today", formatMoney(totalTodayIncl)],
+    ["Cars Washed Today", carsTodayIncl],
+    ["Monthly Earnings", formatMoney(totalMonthIncl)],
+    ["Cars Washed this Month", carsMonthIncl]
+  ];
+
+  sheet.getRange(currentRow, 13, summaryDataExcl.length, 2).setValues(summaryDataExcl);
+  sheet.getRange(currentRow, 16, summaryDataIncl.length, 2).setValues(summaryDataIncl);
+
+  currentRow += summaryDataExcl.length + 3;
+
+  // -------- TABLE FUNCTION (IDENTICAL) --------
+  function writeTable(title, headers, rows) {
+    sheet.getRange(currentRow, 13, 1, headers.length).merge().setValue(title);
+    currentRow++;
+    sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers]);
+    currentRow++;
+    if (rows.length) {
+      sheet.getRange(currentRow, 13, rows.length, headers.length).setValues(rows);
+      currentRow += rows.length + 2;
+    } else {
+      currentRow += 2;
+    }
+  }
+
+  // -------- EMPLOYEE TABLE --------
+  const empRows = Object.keys(empMap).map(name => [
+    name,
+    formatMoney(empMap[name].daily),
+    empMap[name].carsToday,
+    formatMoney(empMap[name].monthly),
+    empMap[name].carsMonth
+  ]);
+
+  writeTable("EMPLOYEE PERFORMANCE",
+    ["NAME","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
+    empRows);
+
+  // -------- FOREMAN --------
+  const foremanRows = Object.keys(foremanMap).map(name => [
+    name,
+    formatMoney(foremanMap[name].daily),
+    foremanMap[name].carsToday,
+    formatMoney(foremanMap[name].monthly),
+    foremanMap[name].carsMonth
+  ]);
+
+  writeTable("FOREMAN PERFORMANCE",
+    ["NAME","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
+    foremanRows);
+
+  // -------- COMPANY --------
+  const compRows = Object.keys(companyMap).map(name => [
+    name,
+    formatMoney(companyMap[name].dailyAmt),
+    companyMap[name].dailyCars,
+    formatMoney(companyMap[name].monthlyAmt),
+    companyMap[name].monthlyCars
+  ]);
+
+  writeTable("COMPANY JOBS",
+    ["COMPANY","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
+    compRows);
+
+  // -------- ZEENA --------
+  const zeenahRows = Object.keys(zeenahMap).map(s => [
+    s,
+    formatMoney(zeenahMap[s].dailyAmt),
+    zeenahMap[s].dailyCars,
+    formatMoney(zeenahMap[s].monthlyAmt),
+    zeenahMap[s].monthlyCars
+  ]);
+
+  writeTable("ZEENA SERVICE",
+    ["SERVICE","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
+    zeenahRows);
+
+  // -------- OIL --------
+  const oilRows = Object.keys(oilMap).map(o => [
+    o,
+    formatMoney(oilMap[o].dailyAmt),
+    oilMap[o].dailyCars,
+    formatMoney(oilMap[o].monthlyAmt),
+    oilMap[o].monthlyCars
+  ]);
+
+  writeTable("OIL CHANGE",
+    ["OIL TYPE","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
+    oilRows);
+
+  SpreadsheetApp.flush();
+
+  // -------- EXPORT PDF --------
+  const url =
+    `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+    `&gid=${sheet.getSheetId()}&size=A4&fitw=true`;
+
+  const blob = UrlFetchApp.fetch(url, {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
+  }).getBlob().setName("Extended_Shift_Report.pdf");
+
+  // -------- EMAIL --------
+  MailApp.sendEmail({
+    to: "imhaninmohd@gmail.com",
+    subject: "Extended Shift Report (Yesterday + Today)",
+    body: "Full report attached.",
+    attachments: [blob]
+  });
+
 }
