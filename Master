@@ -44,7 +44,11 @@ function calc() {
     // Skip blank rows completely
     const date = new Date(timestamp);
 
-    const empNames = (employee || "").toString().split(",").map(e => e.trim()).filter(e => e !== "");
+    const empNames = (employee || "")
+      .toString()
+      .split(/,|\s+/) // split by comma OR any space(s)
+      .map(e => e.trim())
+      .filter(e => e !== "");
     const foremanName = (foreman || "").toString().trim();
 
     // Skip any row with missing names (prevents "Unknown")
@@ -1113,10 +1117,17 @@ function cleanSlateProtocol() {
     const lastCol = sheet.getLastColumn();
 
     if (lastRow > 1) {
+
+      // Clear content
       sheet.getRange(2,1,lastRow-1,lastCol).clearContent();
+
+      // Reset background colors (Service + Price columns)
+      sheet.getRange(2, 5, lastRow-1, 1).setBackground(null); // Column E
+      sheet.getRange(2, 6, lastRow-1, 1).setBackground(null); // Column F
+
       clearedSheets.push(name);
     }
-
+    
   });
 
   SpreadsheetApp.flush();
@@ -1348,7 +1359,11 @@ function emailExtendedShiftReport() {
       ? parseFloat(specialPrice) || 0
       : serviceAmt;
 
-    const empNames = (employee || "").toString().split(",").map(e => e.trim()).filter(e => e);
+    const empNames = (employee || "")
+      .toString()
+      .split(/,|\s+/) // split by comma OR any space(s)
+      .map(e => e.trim())
+      .filter(e => e !== "");
     const foremanName = (foreman || "").toString().trim();
 
     if (!empNames.length || !foremanName) continue;
