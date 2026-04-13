@@ -168,7 +168,7 @@ function calc() {
   }
 
   // Clear output
-  sheet.getRange("M1:R400").clearContent().clearFormat();
+  sheet.getRange("M1:R250").clearContent().clearFormat();
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
@@ -370,6 +370,55 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
   if (oilRows.length) {
     sheet.getRange(currentRow - oilRows.length - 2, 13, oilRows.length, 1).setWrap(true);
   }
+
+
+  // ---------------- FIXED DAILY TABLE ----------------
+
+  // Use already defined month/year
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  let dailyRows = [];
+
+  // Safely read existing values
+  let existingValues = [];
+
+  try {
+    const existingRange = sheet.getRange(currentRow + 2, 13, daysInMonth, 5);
+    existingValues = existingRange.getValues();
+  } catch (e) {
+    existingValues = Array.from({ length: daysInMonth }, () => ["", "", "", "", ""]);
+  }
+
+  // Today's date (to block future rows)
+  const todayDate = today.getDate();
+
+  for (let d = 1; d <= daysInMonth; d++) {
+
+    const dateObj = new Date(year, month, d);
+
+    const formattedDate = Utilities.formatDate(
+      dateObj,
+      Session.getScriptTimeZone(),
+      "MMMM d (EEE)"
+    );
+
+    const existing = existingValues[d - 1] || ["", "", "", "", ""];
+
+    dailyRows.push([
+      formattedDate,
+      d > todayDate ? "" : (existing[1] || ""),
+      d > todayDate ? "" : (existing[2] || ""),
+      d > todayDate ? "" : (existing[3] || ""),
+      d > todayDate ? "" : (existing[4] || "")
+    ]);
+  }
+
+  writeTable(
+    "DAILY PERFORMANCE (AUTO LOGGED)",
+    ["DATE", "NON-COMPANY AED", "CARS", "COMPANY AED", "CARS"],
+    dailyRows,
+    [0]
+  );
 
   // Enterprise Jobs
   if (enterpriseJobs && enterpriseJobs.length) {
@@ -630,7 +679,111 @@ SpreadsheetApp.flush();
 
 }
 
+function setupDailyLogSheet() {
 
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(DAILY_LOG_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(DAILY_LOG_SHEET);
+
+    sheet.getRange(1,1,1,5).setValues([[
+      "Date",
+      "Non-Company Earnings",
+      "Non-Company Cars",
+      "Company Earnings",
+      "Company Cars"
+    ]]);
+  }
+}
+
+function recordDailySnapshot() {
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const data = sheet.getDataRange().getValues();
+
+  const now = new Date();
+  const targetDate = new Date(now);
+  targetDate.setDate(targetDate.getDate() - 1);
+
+  const targetDay = targetDate.getDate(); // 1–31
+
+  // Format: Apr 5 (Sat)
+  const formattedDate = Utilities.formatDate(
+    targetDate,
+    Session.getScriptTimeZone(),
+    "MMM d (EEE)"
+  );
+
+  let totalExcl = 0;
+  let carsExcl = 0;
+  let totalIncl = 0;
+  let carsIncl = 0;
+
+  for (let i = 1; i < data.length; i++) {
+
+    const [timestamp, , , , , serviceFee, company, , , specialPrice] = data[i];
+    if (!timestamp) continue;
+
+    const date = new Date(timestamp);
+    if (date.toDateString() !== targetDate.toDateString()) continue;
+
+    let amt = (specialPrice !== "" && specialPrice != null)
+      ? parseFloat(specialPrice) || 0
+      : parseFloat(serviceFee) || 0;
+
+    const isCompany = company && company.toString().trim() !== "";
+
+    totalIncl += amt;
+    carsIncl++;
+
+    if (!isCompany) {
+      totalExcl += amt;
+      carsExcl++;
+    }
+  }
+
+  // -------- FIND TABLE --------
+  const range = sheet.getRange("M1:R400").getValues();
+
+  let tableStartRow = -1;
+
+  for (let i = 0; i < range.length; i++) {
+    if (
+      range[i][0] &&
+      range[i][0].toString().includes("DAILY PERFORMANCE (AUTO LOGGED)")
+    ) {
+      tableStartRow = i + 3; // title + header
+      break;
+    }
+  }
+
+  if (tableStartRow === -1) return;
+
+  const writeRow = tableStartRow + (targetDay - 1);
+
+  // -------- WRITE DATE + VALUES --------
+
+  // Column M → Date label
+  sheet.getRange(writeRow, 13).setValue(formattedDate);
+
+  // Column N–Q → Data
+  sheet.getRange(writeRow, 14).setValue(`AED ${totalExcl.toLocaleString("en-US")}`);
+  sheet.getRange(writeRow, 15).setValue(carsExcl);
+  sheet.getRange(writeRow, 16).setValue(`AED ${totalIncl.toLocaleString("en-US")}`);
+  sheet.getRange(writeRow, 17).setValue(carsIncl);
+
+}
+
+function createDailyLogTrigger() {
+
+  ScriptApp.newTrigger("recordDailySnapshot")
+    .timeBased()
+    .atHour(0)
+    .nearMinute(10)
+    .everyDays(1)
+    .create();
+}
 
 function processFormSubmission() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -714,6 +867,8 @@ function processFormSubmission() {
 }
 */
 }
+
+
 
 // PRICE MENU FUNCTIONS
 function viewPrice() {
