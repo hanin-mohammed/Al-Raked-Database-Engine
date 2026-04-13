@@ -1280,11 +1280,11 @@ function cleanSlateProtocol() {
       sheet.getRange(2, 5, lastRow-1, 1).setBackground(null); // Column E
       sheet.getRange(2, 6, lastRow-1, 1).setBackground(null); // Column F
 
-      // --- NEW: HARD LIMIT TO 80 ROWS ---
+      // --- UPDATED: HARD LIMIT TO 150 ROWS ---
       const maxRows = sheet.getMaxRows();
 
-      if (maxRows > 80) {
-        sheet.deleteRows(81, maxRows - 80);
+      if (maxRows > 150) {
+        sheet.deleteRows(151, maxRows - 150);
       }
 
       clearedSheets.push(name);
