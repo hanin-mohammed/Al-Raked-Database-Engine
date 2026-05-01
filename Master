@@ -1125,6 +1125,15 @@ function cleanSlateProtocol() {
       sheet.getRange(2, 5, lastRow-1, 1).setBackground(null); // Column E
       sheet.getRange(2, 6, lastRow-1, 1).setBackground(null); // Column F
 
+
+      // ---- LIMIT TO 80 ROWS ----
+      const MAX_ROWS = 81; // Row 1 header + 80 rows
+
+      if (sheet.getMaxRows() > MAX_ROWS) {
+        sheet.deleteRows(MAX_ROWS + 1, sheet.getMaxRows() - MAX_ROWS);
+      }
+
+
       clearedSheets.push(name);
     }
     
@@ -1269,19 +1278,66 @@ function duplicateSheetAtMonthEnd() {
   const tomorrow = new Date(year, month, now.getDate() + 1);
   if (tomorrow.getMonth() !== month) {
     // Today is last day of month
-    const monthName = Utilities.formatDate(
+    const shortMonth = Utilities.formatDate(
       now,
       Session.getScriptTimeZone(),
-      "MMMM yyyy"
+      "MMM"
     );
 
-    const newName = `Form Responses 1 - ${monthName}`;
+    const shortYear = Utilities.formatDate(
+      now,
+      Session.getScriptTimeZone(),
+      "yy"
+    );
+
+    const newName = `${shortMonth}'${shortYear}`;
 
     // Avoid duplicate copies if script runs again
     if (ss.getSheetByName(newName)) return;
 
-    sourceSheet.copyTo(ss).setName(newName);
-  }
+    // ---- DUPLICATE SHEET ----
+
+    const newSheet = sourceSheet.copyTo(ss).setName(newName);
+
+    // ---- MOVE AFTER PriceAudit ----
+
+    const priceAuditSheet = ss.getSheetByName("PriceAudit");
+
+    if (priceAuditSheet) {
+
+      const targetIndex = priceAuditSheet.getIndex();
+
+      ss.setActiveSheet(newSheet);
+
+      ss.moveActiveSheet(targetIndex + 1);
+
+    }
+
+    // ---- PROTECT SHEET ----
+
+    const protection = newSheet.protect().setDescription("Locked monthly archive");
+
+    const me = Session.getEffectiveUser();
+
+    // Remove everyone except you
+
+    protection.removeEditors(
+
+      protection.getEditors().filter(user => user.getEmail() !== me.getEmail())
+
+    );
+
+    // Ensure you are added
+
+    protection.addEditor(me);
+
+    // Disable domain editing
+
+    if (protection.canDomainEdit()) {
+
+      protection.setDomainEdit(false);
+
+    }
 }
 
 function createMonthEndTrigger() {
