@@ -1,3 +1,348 @@
+const TELEGRAM_BOT_TOKEN =
+  "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
+
+const TELEGRAM_CHANNEL_ID =
+  "-1003868639331";
+
+function getReportData() {
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const data = sheet.getDataRange().getValues();
+
+  const today = new Date();
+  const todayStr = today.toDateString();
+
+  const month = today.getMonth();
+  const year = today.getFullYear();
+
+  const zeenahMap = {};
+  const empMap = {};
+  const empLastWorkToday = {};
+  const foremanMap = {};
+  const companyMap = {};
+  const oilMap = {};
+
+  let totalTodayIncl = 0, totalMonthIncl = 0;
+  let totalTodayExcl = 0, totalMonthExcl = 0;
+  let carsTodayIncl = 0, carsMonthIncl = 0;
+  let carsTodayExcl = 0, carsMonthExcl = 0;
+
+  for (let i = 1; i < data.length; i++) {
+
+    const [
+      timestamp,
+      foreman,
+      employee,
+      licensePlate,
+      service,
+      serviceFee,
+      company,
+      oilChange,
+      companyDetail,
+      specialPrice
+    ] = data[i];
+
+    if (!timestamp) continue;
+
+    const date = new Date(timestamp);
+
+    const isToday = date.toDateString() === todayStr;
+    const isThisMonth =
+      date.getMonth() === month &&
+      date.getFullYear() === year;
+
+    let serviceAmt = 0;
+
+    if (
+      serviceFee &&
+      serviceFee.toString().trim().toLowerCase() !== "free"
+    ) {
+      serviceAmt = parseFloat(serviceFee) || 0;
+    }
+
+    let actualAmt;
+
+    if (
+      specialPrice !== "" &&
+      specialPrice !== null &&
+      specialPrice !== undefined
+    ) {
+      actualAmt = parseFloat(specialPrice) || 0;
+    } else {
+      actualAmt = serviceAmt;
+    }
+
+    const empNames = (employee || "")
+      .toString()
+      .split(/,|\s+/)
+      .map(e => e.trim())
+      .filter(e => e !== "");
+
+    const foremanName = (foreman || "").toString().trim();
+
+    if (empNames.length === 0 || !foremanName) continue;
+
+    const isCompanyJob =
+      company &&
+      company.toString().trim() !== "";
+
+    // EMPLOYEES
+    const splitAmt = serviceAmt / empNames.length;
+
+    empNames.forEach(name => {
+
+      if (!empMap[name]) {
+        empMap[name] = {
+          daily: 0,
+          monthly: 0,
+          carsToday: 0,
+          carsMonth: 0
+        };
+      }
+
+      if (isToday) {
+
+        empMap[name].daily += splitAmt;
+        empMap[name].carsToday++;
+
+        if (
+          !empLastWorkToday[name] ||
+          date > empLastWorkToday[name]
+        ) {
+          empLastWorkToday[name] = date;
+        }
+
+      }
+
+      if (isThisMonth) {
+
+        empMap[name].monthly += splitAmt;
+        empMap[name].carsMonth++;
+
+      }
+
+    });
+
+    // OIL
+    if (oilChange && oilChange.toString().trim() !== "") {
+
+      if (!oilMap[oilChange]) {
+        oilMap[oilChange] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0
+        };
+      }
+
+      if (isToday) {
+        oilMap[oilChange].dailyAmt += serviceAmt;
+        oilMap[oilChange].dailyCars++;
+      }
+
+      if (isThisMonth) {
+        oilMap[oilChange].monthlyAmt += serviceAmt;
+        oilMap[oilChange].monthlyCars++;
+      }
+
+    }
+
+    // ZEENA
+    const specialServices = ["Zeena", "Perfume", "Wipers"];
+
+    if (specialServices.includes(service)) {
+
+      if (!zeenahMap[service]) {
+        zeenahMap[service] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0
+        };
+      }
+
+      if (isToday) {
+        zeenahMap[service].dailyAmt += serviceAmt;
+        zeenahMap[service].dailyCars++;
+      }
+
+      if (isThisMonth) {
+        zeenahMap[service].monthlyAmt += serviceAmt;
+        zeenahMap[service].monthlyCars++;
+      }
+
+    }
+
+    // TOTALS
+    if (isToday) {
+
+      carsTodayIncl++;
+      totalTodayIncl += actualAmt;
+
+      if (!isCompanyJob) {
+        carsTodayExcl++;
+        totalTodayExcl += actualAmt;
+      }
+
+    }
+
+    if (isThisMonth) {
+
+      carsMonthIncl++;
+      totalMonthIncl += actualAmt;
+
+      if (!isCompanyJob) {
+        carsMonthExcl++;
+        totalMonthExcl += actualAmt;
+      }
+
+    }
+
+  }
+
+  return {
+
+    generated: new Date(),
+
+    summary: {
+
+      today: {
+        earnings: totalTodayExcl,
+        cars: carsTodayExcl
+      },
+
+      month: {
+        earnings: totalMonthExcl,
+        cars: carsMonthExcl
+      },
+
+      todayIncl: {
+        earnings: totalTodayIncl,
+        cars: carsTodayIncl
+      },
+
+      monthIncl: {
+        earnings: totalMonthIncl,
+        cars: carsMonthIncl
+      }
+
+    },
+
+    employees: empMap,
+    lastWork: empLastWorkToday,
+    oils: oilMap,
+    zeena: zeenahMap
+
+  };
+
+}
+function updateTelegramCache() {
+
+  const data = getReportData();
+
+  PropertiesService
+    .getScriptProperties()
+    .setProperty(
+      "TELEGRAM_REPORT_CACHE",
+      JSON.stringify(data)
+    );
+
+}
+
+function sendTelegramEntry(rowData) {
+
+  const [
+    timestamp,
+    foreman,
+    employee,
+    licensePlate,
+    service,
+    serviceFee,
+    company,
+    oilChange,
+    companyDetail,
+    specialPrice
+  ] = rowData;
+
+  const tz = Session.getScriptTimeZone();
+
+  const timeText = Utilities.formatDate(
+    new Date(timestamp),
+    tz,
+    "dd MMM yyyy • HH:mm"
+  );
+
+  const actualPrice =
+    (
+      specialPrice !== "" &&
+      specialPrice !== null &&
+      specialPrice !== undefined
+    )
+    ? specialPrice
+    : serviceFee;
+
+  const msg =
+`
+🚘 <b>${licensePlate || "-"}</b> • ${service || "-"}
+
+👨‍🔧 ${foreman || "-"}  
+👥 ${employee || "-"}
+
+💵 AED ${actualPrice || 0}
+🕒 ${timeText}
+
+🏢 ${company || "-"} | 🛢️ ${oilChange || "-"}
+`;
+
+  const url =
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+  UrlFetchApp.fetch(url, {
+
+    method: "post",
+
+    contentType: "application/json",
+
+    payload: JSON.stringify({
+
+      chat_id: TELEGRAM_CHANNEL_ID,
+      text: msg,
+      parse_mode: "HTML"
+
+    })
+
+  });
+
+}
+
+function doGet(e) {
+
+  const key = e.parameter.key;
+
+  if (key !== "013187") {
+
+    return ContentService
+      .createTextOutput("Unauthorized")
+      .setMimeType(ContentService.MimeType.TEXT);
+
+  }
+
+  const cache =
+    PropertiesService
+      .getScriptProperties()
+      .getProperty("TELEGRAM_REPORT_CACHE");
+
+  return ContentService
+    .createTextOutput(cache || "{}")
+    .setMimeType(ContentService.MimeType.JSON);
+
+}
+
+
+
+
+
+
 function calc() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const data = sheet.getDataRange().getValues();
@@ -175,23 +520,23 @@ function calc() {
 
   // HEADER
   sheet.getRange(currentRow, 13, 1, 5).merge().setValue("EARNINGS REPORT")
-    .setFontWeight("bold").setFontSize(18).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontSize(18).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
   currentRow++;
   sheet.getRange(currentRow, 13, 1, 5).merge()
     .setValue("Last Updated: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy HH:mm:ss"))
-    .setFontSize(10).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+    .setFontSize(10).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
   currentRow += 2;
 
   // SUMMARY HEADING
   sheet.getRange(currentRow, 13, 1, 5).merge().setValue("DAILY & MONTHLY SUMMARY")
-    .setFontWeight("bold").setFontSize(17).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontSize(17).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
   currentRow++;
 
   // Subheadings for two distinct tables
   sheet.getRange(currentRow, 13, 1, 2).merge().setValue("WITHOUT COMPANY")
-    .setFontWeight("bold").setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
   sheet.getRange(currentRow, 16, 1, 2).merge().setValue("WITH COMPANY")
-    .setFontWeight("bold").setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
   currentRow++;
 
   const summaryDataExcl = [
@@ -209,28 +554,28 @@ function calc() {
 
   // Left table
   const exclRange = sheet.getRange(currentRow, 13, summaryDataExcl.length, 2);
-  exclRange.setValues(summaryDataExcl).setFontFamily("IBM Plex Mono");
+  exclRange.setValues(summaryDataExcl).setFontFamily("IBM Plex Sans");
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 13, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Mono").setFontSize(14);
+  sheet.getRange(currentRow, 13, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Sans").setFontSize(14);
 
   // Right table
   const inclRange = sheet.getRange(currentRow, 16, summaryDataIncl.length, 2);
-  inclRange.setValues(summaryDataIncl).setFontFamily("IBM Plex Mono");
+  inclRange.setValues(summaryDataIncl).setFontFamily("IBM Plex Sans");
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 16, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Mono").setFontSize(14);
+  sheet.getRange(currentRow, 16, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Sans").setFontSize(14);
 
   // FORMAT SUMMARY VALUES
 
 sheet.getRange(currentRow, 14, summaryDataExcl.length, 1)
-  .setFontFamily("IBM Plex Mono")
+  .setFontFamily("IBM Plex Sans")
   .setFontSize(16)
   .setFontWeight("bold")
   .setHorizontalAlignment("right");
 
 sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
-  .setFontFamily("IBM Plex Mono")
+  .setFontFamily("IBM Plex Sans")
   .setFontSize(16)
   .setFontWeight("bold")
   .setHorizontalAlignment("right");
@@ -240,14 +585,20 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
   // Generic table function
   function writeTable(title, headers, rows, leftAlignCols = [0]) {
     sheet.getRange(currentRow, 13, 1, headers.length).merge().setValue(title)
-      .setFontWeight("bold").setFontSize(16).setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+      .setFontWeight("bold").setFontSize(16).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
     currentRow++;
     sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers])
-      .setFontWeight("bold").setFontFamily("IBM Plex Mono");
+      .setFontWeight("bold").setFontFamily("IBM Plex Sans");
     currentRow++;
     if (rows.length) {
       const range = sheet.getRange(currentRow, 13, rows.length, headers.length);
-      range.setValues(rows).setFontFamily("IBM Plex Mono");
+
+      range
+        .setValues(rows)
+        .setFontFamily("IBM Plex Sans")
+        .setFontSize(12) // change this number
+        .setWrap(true);
+
       range.setBorder(true, true, true, true, true, true);
 
       // Alignment
@@ -275,7 +626,7 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
     }
   }
   sheet.getRange(currentRow, 13, 1, 5).merge().setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
-    .setFontWeight("bold").setFontFamily("IBM Plex Mono").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
   currentRow += 2;
 
   // Employee
@@ -407,14 +758,14 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
     sheet.getRange(startRow, 18, enterpriseRows.length, 1).setWrap(true); // Column Q
   }
 
-
+  updateTelegramCache();
 
 }
 
 function auditPriceChange(e) {
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);   // wait up to 5 seconds for previous edit to finish
+  lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
 
   try {
 
@@ -847,8 +1198,13 @@ function emailPerformanceReport() {
     to: "alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
     subject: `${subjectDate} - Al Raked Performance Report`,
     body:
-      "Attached is the daily performance report.\n\n" +
-      auditText,
+      "Sir,\n\n" +
+      "The system has completed today's performance analysis.\n\n" +
+      "Summary:\n" +
+      auditText + "\n\n" +
+      "All operational metrics have been compiled and verified.\n" +
+      "Detailed reports are attached for your review.\n\n" +
+      "Awaiting further instructions.",
     attachments: attachments
   });
 
@@ -1068,9 +1424,14 @@ function emailMonthlyReport() {
     subject: `Al Raked Monthly Earnings Report - ${monthName}`,
 
     body:
-      "Attached are the monthly reports.\n\n" +
-      "1. Earnings report (PDF)\n" +
-      "2. Private Office vehicle log (Excel)",
+      "Sir,\n\n" +
+      "Monthly consolidation complete for " + monthName + ".\n\n" +
+      "Included in this transmission:\n" +
+      "1. Earnings performance report (PDF)\n" +
+      "2. Private Office vehicle log (Excel)\n\n" +
+      "All data has been structured, validated, and archived.\n" +
+      "Systems are aligned for the upcoming cycle.\n\n" +
+      "Please review at your convenience.",
 
     attachments: [pdfBlob, excelBlob]
 
@@ -1148,11 +1509,14 @@ function cleanSlateProtocol() {
     to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com",
     subject: "Al Raked Clean Slate Protocol Completed",
     body:
-      "The monthly system reset has completed successfully.\n\n" +
-      "Time: " + dateText + "\n\n" +
-      "Sheets cleared:\n" +
-      clearedSheets.join("\n") +
-      "\n\nHeaders were preserved. System is ready for the new month."
+      "Sir,\n\n" +
+      "Clean Slate Protocol executed successfully.\n\n" +
+      "Timestamp: " + dateText + "\n\n" +
+      "The following systems have been reset:\n" +
+      clearedSheets.join("\n") + "\n\n" +
+      "Structural integrity confirmed. Headers remain intact.\n" +
+      "The system is now fully prepared for the new operational cycle.\n\n" +
+      "All processes standing by.",
   });
 
 }
@@ -1249,18 +1613,19 @@ function createTriggers() {
     .everyDays(1)
     .create();
 }
-
 function onFormSubmit(e) {
-  // 1. Process the new response (sorting, unmerging, etc.)
+
   processFormSubmission();
 
-  // 2. Wait 10 seconds for Google Sheets to finish updating
   Utilities.sleep(2000);
 
-  // 3. Update the performance report
   calc();
-}
 
+  const rowData = e.values;
+
+  sendTelegramEntry(rowData);
+
+}
 
 
 //Duplicating sheet once a month
@@ -1338,6 +1703,7 @@ function duplicateSheetAtMonthEnd() {
       protection.setDomainEdit(false);
 
     }
+  }
 }
 
 function createMonthEndTrigger() {
@@ -1671,8 +2037,33 @@ function emailExtendedShiftReport() {
   MailApp.sendEmail({
     to: "imhaninmohd@gmail.com",
     subject: "Extended Shift Report (Yesterday + Today)",
-    body: "Full report attached.",
+    body:
+      "Sir,\n\n" +
+      "Extended shift analysis complete.\n" +
+      "This report consolidates activity across the previous and current operational windows.\n\n" +
+      "All performance metrics have been processed and verified.\n" +
+      "The full report is attached for review.\n\n" +
+      "No anomalies detected.",
     attachments: [blob]
   });
+
+}
+
+
+
+function testTelegramChannel() {
+
+  sendTelegramEntry([
+    new Date(),
+    "Test Foreman",
+    "Test Employee",
+    "12345",
+    "Wash",
+    45,
+    "",
+    "",
+    "",
+    ""
+  ]);
 
 }
