@@ -1,0 +1,331 @@
+const BOT_TOKEN =
+  "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
+const WEB_APP_URL =
+  "https://script.google.com/macros/s/AKfycbw_q3WkDF_g-Nen-r3Km68Uf_Z0Uvu4vUo8bXG4RUvNbK3nMMVj33-ldbM1Ub1osHEU/exec";
+
+
+
+const SECRET_KEY =
+  "013187";
+
+function doPost(e) {
+
+  try {
+
+    const data = JSON.parse(e.postData.contents);
+
+    if (
+      !data ||
+      !data.message ||
+      !data.message.text
+    ) {
+
+      return HtmlService.createHtmlOutput("ok");
+
+    }
+
+    const chatId =
+      data.message.chat.id;
+
+    const text =
+      data.message.text
+        .toLowerCase()
+        .trim();
+
+    if (text === "/today") {
+
+      sendToday(chatId);
+
+    }
+
+    else if (text === "/employees") {
+
+      sendEmployees(chatId);
+
+    }
+
+    else if (text === "/oils") {
+
+      sendOils(chatId);
+
+    }
+
+    else if (text === "/zeena") {
+
+      sendZeena(chatId);
+
+    }
+
+    else if (text === "/ping") {
+
+      sendMessage(chatId, "pong");
+
+    }
+
+    else {
+
+      sendMessage(
+        chatId,
+`
+<b>COMMANDS</b>
+
+today
+employees
+oils
+zeena
+ping
+`
+      );
+
+    }
+
+    return HtmlService.createHtmlOutput("ok");
+
+  }
+
+  catch(err) {
+
+    Logger.log(err);
+
+    return HtmlService.createHtmlOutput("error");
+
+  }
+
+}
+
+function fetchData() {
+
+  const url =
+    WEB_APP_URL +
+    "?key=" +
+    SECRET_KEY;
+
+  const response =
+    UrlFetchApp.fetch(url);
+
+  return JSON.parse(
+    response.getContentText()
+  );
+
+}
+
+function sendToday(chatId) {
+
+  const data =
+    fetchData();
+
+  const s =
+    data.summary;
+
+  const msg =
+`
+<b>AL RAKED</b>
+
+Today: AED ${s.today.earnings} • ${s.today.cars} cars
+Month: AED ${s.month.earnings} • ${s.month.cars} cars
+
+With Company
+
+Today: AED ${s.todayIncl.earnings} • ${s.todayIncl.cars} cars
+Month: AED ${s.monthIncl.earnings} • ${s.monthIncl.cars} cars
+`;
+
+  sendMessage(chatId, msg);
+
+}
+
+function sendEmployees(chatId) {
+
+  const data =
+    fetchData();
+
+  const employees =
+    data.employees;
+
+  const lastWork =
+    data.lastWork;
+
+  let msg =
+    `<b>EMPLOYEES</b>\n\n`;
+
+  const now =
+    new Date();
+
+  Object.keys(employees)
+
+    .sort((a,b)=>
+
+      employees[b].carsToday -
+      employees[a].carsToday
+
+    )
+
+    .forEach(name => {
+
+      const emp =
+        employees[name];
+
+      let lastText =
+        "No work";
+
+      if (lastWork[name]) {
+
+        const last =
+          new Date(lastWork[name]);
+
+        const diff =
+          Math.floor(
+            (now - last) / 60000
+          );
+
+        if (diff >= 60) {
+
+          const h =
+            Math.floor(diff / 60);
+
+          const m =
+            diff % 60;
+
+          lastText =
+            m
+              ? `${h}h ${m}m ago`
+              : `${h}h ago`;
+
+        }
+
+        else {
+
+          lastText =
+            `${diff}m ago`;
+
+        }
+
+      }
+
+      msg +=
+`
+<b>${name}</b>
+
+AED ${emp.daily.toFixed(0)} • ${emp.carsToday} cars today
+AED ${emp.monthly.toFixed(0)} • ${emp.carsMonth} cars month
+
+${lastText}
+
+`;
+
+    });
+
+  sendLongMessage(chatId, msg);
+
+}
+
+function sendOils(chatId) {
+
+  const data =
+    fetchData();
+
+  const oils =
+    data.oils;
+
+  let msg =
+    `<b>OILS</b>\n\n`;
+
+  Object.keys(oils)
+
+    .forEach(name => {
+
+      const o =
+        oils[name];
+
+      msg +=
+`
+<b>${name}</b>
+
+AED ${o.dailyAmt} • ${o.dailyCars} cars today
+AED ${o.monthlyAmt} • ${o.monthlyCars} cars month
+
+`;
+
+    });
+
+  sendLongMessage(chatId, msg);
+
+}
+
+function sendZeena(chatId) {
+
+  const data =
+    fetchData();
+
+  const zeena =
+    data.zeena;
+
+  let msg =
+    `<b>ZEENA / WIPERS</b>\n\n`;
+
+  Object.keys(zeena)
+
+    .forEach(name => {
+
+      const z =
+        zeena[name];
+
+      msg +=
+`
+<b>${name}</b>
+
+AED ${z.dailyAmt} • ${z.dailyCars} cars today
+AED ${z.monthlyAmt} • ${z.monthlyCars} cars month
+
+`;
+
+    });
+
+  sendLongMessage(chatId, msg);
+
+}
+
+function sendMessage(chatId, text) {
+
+  const url =
+    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  UrlFetchApp.fetch(url, {
+
+    method: "post",
+
+    contentType:
+      "application/json",
+
+    payload: JSON.stringify({
+
+      chat_id: chatId,
+
+      text: text,
+
+      parse_mode: "HTML"
+
+    })
+
+  });
+
+}
+
+function sendLongMessage(chatId, text) {
+
+  const limit = 3500;
+
+  for (
+    let i = 0;
+    i < text.length;
+    i += limit
+  ) {
+
+    sendMessage(
+      chatId,
+      text.substring(i, i + limit)
+    );
+
+  }
+
+}
