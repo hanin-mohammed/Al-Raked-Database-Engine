@@ -8,6 +8,9 @@ const WEB_APP_URL =
 const SECRET_KEY =
   "013187";
 
+const SEARCH_PREFIX =
+  "SEARCH_USER_";
+
 function doPost(e) {
 
   try {
@@ -56,9 +59,54 @@ function doPost(e) {
 
     }
 
+    else if (text === "/search") {
+
+      PropertiesService
+        .getScriptProperties()
+        .setProperty(
+          SEARCH_PREFIX + chatId,
+          "waiting"
+        );
+
+      sendMessage(
+        chatId,
+        "Send vehicle plate number."
+      );
+
+    }
+
+    else if (text === "/companies") {
+
+      sendCompanies(chatId);
+
+    }
+
     else if (text === "/ping") {
 
       sendMessage(chatId, "pong");
+
+    }
+
+    else if (
+
+      PropertiesService
+        .getScriptProperties()
+        .getProperty(
+          SEARCH_PREFIX + chatId
+        )
+
+    ) {
+
+      PropertiesService
+        .getScriptProperties()
+        .deleteProperty(
+          SEARCH_PREFIX + chatId
+        );
+
+      sendVehicleSearch(
+        chatId,
+        text
+      );
 
     }
 
@@ -71,6 +119,8 @@ function doPost(e) {
 
 today
 employees
+companies
+search
 oils
 zeena
 ping
@@ -108,6 +158,27 @@ function fetchData() {
   );
 
 }
+
+
+function fetchVehicleSearch(plate) {
+
+  const url =
+    WEB_APP_URL +
+    "?key=" +
+    SECRET_KEY +
+    "&search=" +
+    encodeURIComponent(plate);
+
+  const response =
+    UrlFetchApp.fetch(url);
+
+  return JSON.parse(
+    response.getContentText()
+  );
+
+}
+
+
 
 function sendToday(chatId) {
 
@@ -218,6 +289,102 @@ ${lastText}
   sendLongMessage(chatId, msg);
 
 }
+
+function sendCompanies(chatId) {
+
+  const data =
+    fetchData();
+
+  const companies =
+    data.companies;
+
+  let msg =
+    `<b>COMPANIES</b>\n\n`;
+
+  Object.keys(companies)
+
+    .sort((a, b) =>
+      companies[b].dailyAmt -
+      companies[a].dailyAmt
+    )
+
+    .forEach(name => {
+
+      const c =
+        companies[name];
+
+      msg +=
+`
+<b>${name}</b>
+
+AED ${c.dailyAmt.toFixed(0)} • ${c.dailyCars} cars today
+AED ${c.monthlyAmt.toFixed(0)} • ${c.monthlyCars} cars month
+
+`;
+
+    });
+
+  sendLongMessage(chatId, msg);
+
+}
+
+
+
+function sendVehicleSearch(chatId, plate) {
+
+  const results =
+    fetchVehicleSearch(plate);
+
+  if (!results.length) {
+
+    sendMessage(
+      chatId,
+      `No entries found for ${plate}`
+    );
+
+    return;
+
+  }
+
+  let msg =
+    `<b>SEARCH: ${plate}</b>\n\n`;
+
+  results.forEach((r, index) => {
+
+    const date =
+      Utilities.formatDate(
+        new Date(r.timestamp),
+        Session.getScriptTimeZone(),
+        "dd MMM yyyy • HH:mm"
+      );
+
+    msg +=
+`
+<b>${index + 1}.</b>
+
+🚘 ${r.plate}
+
+🛠️ ${r.service}
+💵 AED ${r.price || 0}
+
+👨‍🔧 ${r.foreman || "-"}
+👥 ${r.employee || "-"}
+
+🏢 ${r.company || "-"}
+🛢️ ${r.oil || "-"}
+
+📅 ${date}
+📂 ${r.sheet}
+
+`;
+
+  });
+
+  sendLongMessage(chatId, msg);
+
+}
+
+
 
 function sendOils(chatId) {
 
