@@ -122,7 +122,35 @@ function getReportData() {
       }
 
     });
+    // COMPANY
+    if (isCompanyJob) {
 
+      if (!companyMap[company]) {
+
+        companyMap[company] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0
+        };
+
+      }
+
+      if (isToday) {
+
+        companyMap[company].dailyAmt += actualAmt;
+        companyMap[company].dailyCars++;
+
+      }
+
+      if (isThisMonth) {
+
+        companyMap[company].monthlyAmt += actualAmt;
+        companyMap[company].monthlyCars++;
+
+      }
+
+    }
     // OIL
     if (oilChange && oilChange.toString().trim() !== "") {
 
@@ -230,6 +258,7 @@ function getReportData() {
 
     employees: empMap,
     lastWork: empLastWorkToday,
+    companies: companyMap,
     oils: oilMap,
     zeena: zeenahMap
 
@@ -315,9 +344,99 @@ function sendTelegramEntry(rowData) {
 
 }
 
+function searchVehicleHistory(plate) {
+
+  const ss =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheets =
+    ss.getSheets();
+
+  const normalizedSearch =
+    normalizePlate(plate);
+
+  const results = [];
+
+  sheets.forEach(sheet => {
+
+    const name =
+      sheet.getName();
+
+    // Skip non-data sheets
+    if (
+      name === "PriceAudit" ||
+      name.startsWith("TEMP")
+    ) {
+      return;
+    }
+
+    const data =
+      sheet.getDataRange().getValues();
+
+    for (let i = 1; i < data.length; i++) {
+
+      const row = data[i];
+
+      const plateValue =
+        normalizePlate(row[3]);
+
+      if (
+        plateValue === normalizedSearch
+      ) {
+
+        results.push({
+
+          sheet: name,
+          timestamp: row[0],
+          foreman: row[1],
+          employee: row[2],
+          plate: row[3],
+          service: row[4],
+          price:
+            (
+              row[9] !== "" &&
+              row[9] !== null &&
+              row[9] !== undefined
+            )
+            ? row[9]
+            : row[5],
+          company: row[6],
+          oil: row[7]
+
+        });
+
+      }
+
+    }
+
+  });
+
+  results.sort((a, b) =>
+    new Date(b.timestamp) -
+    new Date(a.timestamp)
+  );
+
+  return results.slice(0, 15);
+
+}
+
+function normalizePlate(text) {
+
+  return (text || "")
+    .toString()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/-/g, "");
+
+}
+
+
 function doGet(e) {
 
   const key = e.parameter.key;
+
+  const search =
+    e.parameter.search;
 
   if (key !== "013187") {
 
@@ -327,12 +446,38 @@ function doGet(e) {
 
   }
 
+  if (search) {
+
+    const results =
+
+      searchVehicleHistory(search);
+
+    return ContentService
+
+      .createTextOutput(
+
+        JSON.stringify(results)
+
+      )
+
+      .setMimeType(
+
+        ContentService.MimeType.JSON
+
+      );
+
+  }
+
   const cache =
+
     PropertiesService
+
       .getScriptProperties()
+
       .getProperty("TELEGRAM_REPORT_CACHE");
 
   return ContentService
+
     .createTextOutput(cache || "{}")
     .setMimeType(ContentService.MimeType.JSON);
 
