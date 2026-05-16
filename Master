@@ -1,12 +1,10 @@
-const TELEGRAM_BOT_TOKEN =
-  "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
+const TELEGRAM_BOT_TOKEN = "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
 
-const TELEGRAM_CHANNEL_ID =
-  "-1003868639331";
+const TELEGRAM_CHANNEL_ID = "-1003868639331";
 
 function getReportData() {
-
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const sheet =
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const data = sheet.getDataRange().getValues();
 
   const today = new Date();
@@ -22,13 +20,16 @@ function getReportData() {
   const companyMap = {};
   const oilMap = {};
 
-  let totalTodayIncl = 0, totalMonthIncl = 0;
-  let totalTodayExcl = 0, totalMonthExcl = 0;
-  let carsTodayIncl = 0, carsMonthIncl = 0;
-  let carsTodayExcl = 0, carsMonthExcl = 0;
+  let totalTodayIncl = 0,
+    totalMonthIncl = 0;
+  let totalTodayExcl = 0,
+    totalMonthExcl = 0;
+  let carsTodayIncl = 0,
+    carsMonthIncl = 0;
+  let carsTodayExcl = 0,
+    carsMonthExcl = 0;
 
   for (let i = 1; i < data.length; i++) {
-
     const [
       timestamp,
       foreman,
@@ -39,7 +40,7 @@ function getReportData() {
       company,
       oilChange,
       companyDetail,
-      specialPrice
+      specialPrice,
     ] = data[i];
 
     if (!timestamp) continue;
@@ -48,15 +49,11 @@ function getReportData() {
 
     const isToday = date.toDateString() === todayStr;
     const isThisMonth =
-      date.getMonth() === month &&
-      date.getFullYear() === year;
+      date.getMonth() === month && date.getFullYear() === year;
 
     let serviceAmt = 0;
 
-    if (
-      serviceFee &&
-      serviceFee.toString().trim().toLowerCase() !== "free"
-    ) {
+    if (serviceFee && serviceFee.toString().trim().toLowerCase() !== "free") {
       serviceAmt = parseFloat(serviceFee) || 0;
     }
 
@@ -75,91 +72,71 @@ function getReportData() {
     const empNames = (employee || "")
       .toString()
       .split(/,|\s+/)
-      .map(e => e.trim())
-      .filter(e => e !== "");
+      .map((e) => e.trim())
+      .filter((e) => e !== "");
 
     const foremanName = (foreman || "").toString().trim();
 
     if (empNames.length === 0 || !foremanName) continue;
 
-    const isCompanyJob =
-      company &&
-      company.toString().trim() !== "";
+    const isCompanyJob = company && company.toString().trim() !== "";
 
     // EMPLOYEES
     const splitAmt = serviceAmt / empNames.length;
 
-    empNames.forEach(name => {
-
+    empNames.forEach((name) => {
       if (!empMap[name]) {
         empMap[name] = {
           daily: 0,
           monthly: 0,
           carsToday: 0,
-          carsMonth: 0
+          carsMonth: 0,
         };
       }
 
       if (isToday) {
-
         empMap[name].daily += splitAmt;
         empMap[name].carsToday++;
 
-        if (
-          !empLastWorkToday[name] ||
-          date > empLastWorkToday[name]
-        ) {
+        if (!empLastWorkToday[name] || date > empLastWorkToday[name]) {
           empLastWorkToday[name] = date;
         }
-
       }
 
       if (isThisMonth) {
-
         empMap[name].monthly += splitAmt;
         empMap[name].carsMonth++;
-
       }
-
     });
     // COMPANY
     if (isCompanyJob) {
-
       if (!companyMap[company]) {
-
         companyMap[company] = {
           dailyAmt: 0,
           monthlyAmt: 0,
           dailyCars: 0,
-          monthlyCars: 0
+          monthlyCars: 0,
         };
-
       }
 
       if (isToday) {
-
         companyMap[company].dailyAmt += actualAmt;
         companyMap[company].dailyCars++;
-
       }
 
       if (isThisMonth) {
-
         companyMap[company].monthlyAmt += actualAmt;
         companyMap[company].monthlyCars++;
-
       }
-
     }
     // OIL
     if (oilChange && oilChange.toString().trim() !== "") {
-
       if (!oilMap[oilChange]) {
         oilMap[oilChange] = {
           dailyAmt: 0,
           monthlyAmt: 0,
           dailyCars: 0,
-          monthlyCars: 0
+          monthlyCars: 0,
         };
       }
 
@@ -172,20 +149,18 @@ function getReportData() {
         oilMap[oilChange].monthlyAmt += serviceAmt;
         oilMap[oilChange].monthlyCars++;
       }
-
     }
 
     // ZEENA
     const specialServices = ["Zeena", "Perfume", "Wipers"];
 
     if (specialServices.includes(service)) {
-
       if (!zeenahMap[service]) {
         zeenahMap[service] = {
           dailyAmt: 0,
           monthlyAmt: 0,
           dailyCars: 0,
-          monthlyCars: 0
+          monthlyCars: 0,
         };
       }
 
@@ -198,12 +173,10 @@ function getReportData() {
         zeenahMap[service].monthlyAmt += serviceAmt;
         zeenahMap[service].monthlyCars++;
       }
-
     }
 
     // TOTALS
     if (isToday) {
-
       carsTodayIncl++;
       totalTodayIncl += actualAmt;
 
@@ -211,11 +184,9 @@ function getReportData() {
         carsTodayExcl++;
         totalTodayExcl += actualAmt;
       }
-
     }
 
     if (isThisMonth) {
-
       carsMonthIncl++;
       totalMonthIncl += actualAmt;
 
@@ -223,63 +194,108 @@ function getReportData() {
         carsMonthExcl++;
         totalMonthExcl += actualAmt;
       }
-
     }
+  }
 
+  const attendance = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+
+    const timestamp = new Date(row[0]);
+
+    if (isNaN(timestamp.getTime())) continue;
+
+    const rowDate = Utilities.formatDate(
+      timestamp,
+      Session.getScriptTimeZone(),
+      "yyyy-MM-dd",
+    );
+    
+    const currentDate = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone(),
+      "yyyy-MM-dd",
+    );
+    
+    if (rowDate !== currentDate) continue;
+
+    const employees = (row[2] || "")
+      .toString()
+      .split(/,|\s+/)
+      .map((e) => e.trim().toUpperCase())
+      .filter(Boolean);
+
+    employees.forEach((name) => {
+      if (!attendance[name]) {
+        attendance[name] = {
+          first: timestamp,
+          last: timestamp,
+        };
+      } else {
+        if (timestamp < attendance[name].first) {
+          attendance[name].first = timestamp;
+        }
+
+        if (timestamp > attendance[name].last) {
+          attendance[name].last = timestamp;
+        }
+      }
+    });
   }
 
   return {
-
     generated: new Date(),
 
     summary: {
-
       today: {
         earnings: totalTodayExcl,
-        cars: carsTodayExcl
+        cars: carsTodayExcl,
       },
 
       month: {
         earnings: totalMonthExcl,
-        cars: carsMonthExcl
+        cars: carsMonthExcl,
       },
 
       todayIncl: {
         earnings: totalTodayIncl,
-        cars: carsTodayIncl
+        cars: carsTodayIncl,
       },
 
       monthIncl: {
         earnings: totalMonthIncl,
-        cars: carsMonthIncl
-      }
-
+        cars: carsMonthIncl,
+      },
     },
 
     employees: empMap,
     lastWork: empLastWorkToday,
     companies: companyMap,
     oils: oilMap,
-    zeena: zeenahMap
-
+    zeena: zeenahMap,
+    attendance: attendance,
   };
-
 }
 function updateTelegramCache() {
-
   const data = getReportData();
 
-  PropertiesService
-    .getScriptProperties()
-    .setProperty(
-      "TELEGRAM_REPORT_CACHE",
-      JSON.stringify(data)
-    );
+  PropertiesService.getScriptProperties().setProperty(
+    "TELEGRAM_REPORT_CACHE",
+    JSON.stringify(data),
+  );
+}
 
+function saveYesterdaySnapshot() {
+  const data = getReportData();
+
+  PropertiesService.getScriptProperties().setProperty(
+    "TELEGRAM_YESTERDAY_CACHE",
+    JSON.stringify(data),
+  );
 }
 
 function sendTelegramEntry(rowData) {
-
   const [
     timestamp,
     foreman,
@@ -290,7 +306,7 @@ function sendTelegramEntry(rowData) {
     company,
     oilChange,
     companyDetail,
-    specialPrice
+    specialPrice,
   ] = rowData;
 
   const tz = Session.getScriptTimeZone();
@@ -298,23 +314,18 @@ function sendTelegramEntry(rowData) {
   const timeText = Utilities.formatDate(
     new Date(timestamp),
     tz,
-    "dd MMM yyyy • HH:mm"
+    "dd MMM yyyy • HH:mm",
   );
 
   const actualPrice =
-    (
-      specialPrice !== "" &&
-      specialPrice !== null &&
-      specialPrice !== undefined
-    )
-    ? specialPrice
-    : serviceFee;
+    specialPrice !== "" && specialPrice !== null && specialPrice !== undefined
+      ? specialPrice
+      : serviceFee;
 
-  const msg =
-`
+  const msg = `
 🚘 <b>${licensePlate || "-"}</b> • ${service || "-"}
 
-👨‍🔧 ${foreman || "-"}  
+👨‍🔧 ${foreman || "-"}
 👥 ${employee || "-"}
 
 💵 AED ${actualPrice || 0}
@@ -323,69 +334,47 @@ function sendTelegramEntry(rowData) {
 🏢 ${company || "-"} | 🛢️ ${oilChange || "-"}
 `;
 
-  const url =
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
   UrlFetchApp.fetch(url, {
-
     method: "post",
 
     contentType: "application/json",
 
     payload: JSON.stringify({
-
       chat_id: TELEGRAM_CHANNEL_ID,
       text: msg,
-      parse_mode: "HTML"
-
-    })
-
+      parse_mode: "HTML",
+    }),
   });
-
 }
 
 function searchVehicleHistory(plate) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  const ss =
-    SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
 
-  const sheets =
-    ss.getSheets();
-
-  const normalizedSearch =
-    normalizePlate(plate);
+  const normalizedSearch = normalizePlate(plate);
 
   const results = [];
 
-  sheets.forEach(sheet => {
-
-    const name =
-      sheet.getName();
+  sheets.forEach((sheet) => {
+    const name = sheet.getName();
 
     // Skip non-data sheets
-    if (
-      name === "PriceAudit" ||
-      name.startsWith("TEMP")
-    ) {
+    if (name === "PriceAudit" || name.startsWith("TEMP")) {
       return;
     }
 
-    const data =
-      sheet.getDataRange().getValues();
+    const data = sheet.getDataRange().getValues();
 
     for (let i = 1; i < data.length; i++) {
-
       const row = data[i];
 
-      const plateValue =
-        normalizePlate(row[3]);
+      const plateValue = normalizePlate(row[3]);
 
-      if (
-        plateValue === normalizedSearch
-      ) {
-
+      if (plateValue === normalizedSearch) {
         results.push({
-
           sheet: name,
           timestamp: row[0],
           foreman: row[1],
@@ -393,103 +382,60 @@ function searchVehicleHistory(plate) {
           plate: row[3],
           service: row[4],
           price:
-            (
-              row[9] !== "" &&
-              row[9] !== null &&
-              row[9] !== undefined
-            )
-            ? row[9]
-            : row[5],
+            row[9] !== "" && row[9] !== null && row[9] !== undefined
+              ? row[9]
+              : row[5],
           company: row[6],
-          oil: row[7]
-
+          oil: row[7],
         });
-
       }
-
     }
-
   });
 
-  results.sort((a, b) =>
-    new Date(b.timestamp) -
-    new Date(a.timestamp)
-  );
+  results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   return results.slice(0, 15);
-
 }
 
 function normalizePlate(text) {
-
   return (text || "")
     .toString()
     .toUpperCase()
     .replace(/\s+/g, "")
     .replace(/-/g, "");
-
 }
 
-
 function doGet(e) {
-
   const key = e.parameter.key;
 
-  const search =
-    e.parameter.search;
+  const search = e.parameter.search;
 
   if (key !== "013187") {
-
-    return ContentService
-      .createTextOutput("Unauthorized")
-      .setMimeType(ContentService.MimeType.TEXT);
-
+    return ContentService.createTextOutput("Unauthorized").setMimeType(
+      ContentService.MimeType.TEXT,
+    );
   }
 
   if (search) {
+    const results = searchVehicleHistory(search);
 
-    const results =
+    return ContentService.createTextOutput(JSON.stringify(results))
 
-      searchVehicleHistory(search);
-
-    return ContentService
-
-      .createTextOutput(
-
-        JSON.stringify(results)
-
-      )
-
-      .setMimeType(
-
-        ContentService.MimeType.JSON
-
-      );
-
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
-  const cache =
+  const cache = PropertiesService.getScriptProperties()
 
-    PropertiesService
+    .getProperty("TELEGRAM_REPORT_CACHE");
 
-      .getScriptProperties()
-
-      .getProperty("TELEGRAM_REPORT_CACHE");
-
-  return ContentService
-
-    .createTextOutput(cache || "{}")
-    .setMimeType(ContentService.MimeType.JSON);
-
+  return ContentService.createTextOutput(cache || "{}").setMimeType(
+    ContentService.MimeType.JSON,
+  );
 }
 
-
-
-
-
-
 function calc() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const sheet =
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const data = sheet.getDataRange().getValues();
   const today = new Date();
   const todayStr = today.toDateString();
@@ -500,17 +446,32 @@ function calc() {
   const empMap = {};
   const empLastWorkToday = {};
   const foremanMap = {};
-  const companyMap = {}; 
-  const oilMap = {}; 
-  
-  let totalTodayIncl = 0, totalMonthIncl = 0;
-  let totalTodayExcl = 0, totalMonthExcl = 0;
-  let carsTodayIncl = 0, carsMonthIncl = 0;
-  let carsTodayExcl = 0, carsMonthExcl = 0;
+  const companyMap = {};
+  const oilMap = {};
+
+  let totalTodayIncl = 0,
+    totalMonthIncl = 0;
+  let totalTodayExcl = 0,
+    totalMonthExcl = 0;
+  let carsTodayIncl = 0,
+    carsMonthIncl = 0;
+  let carsTodayExcl = 0,
+    carsMonthExcl = 0;
   let enterpriseJobs = [];
 
   for (let i = 1; i < data.length; i++) {
-    const [timestamp, foreman, employee, licensePlate, service, serviceFee, company, oilChange, companyDetail, specialPrice] = data[i];
+    const [
+      timestamp,
+      foreman,
+      employee,
+      licensePlate,
+      service,
+      serviceFee,
+      company,
+      oilChange,
+      companyDetail,
+      specialPrice,
+    ] = data[i];
     if (!timestamp) continue;
     let serviceAmt = 0;
     if (serviceFee && serviceFee.toString().trim().toLowerCase() !== "free") {
@@ -518,17 +479,31 @@ function calc() {
     }
 
     let actualAmt;
-    if (specialPrice !== "" && specialPrice !== null && specialPrice !== undefined) {
+    if (
+      specialPrice !== "" &&
+      specialPrice !== null &&
+      specialPrice !== undefined
+    ) {
       actualAmt = parseFloat(specialPrice) || 0; // if 0 entered, that's still valid
     } else {
       actualAmt = serviceAmt; // fallback to service fee if no special price
     }
 
     if (
-      (companyDetail && companyDetail.toString().trim() !== "") || 
+      (companyDetail && companyDetail.toString().trim() !== "") ||
       (company && company.toString().trim() === "Private Office")
     ) {
-      enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, actualAmt, company, oilChange, companyDetail]);
+      enterpriseJobs.push([
+        timestamp,
+        foreman,
+        employee,
+        licensePlate,
+        service,
+        actualAmt,
+        company,
+        oilChange,
+        companyDetail,
+      ]);
     }
 
     // Skip blank rows completely
@@ -537,27 +512,37 @@ function calc() {
     const empNames = (employee || "")
       .toString()
       .split(/,|\s+/) // split by comma OR any space(s)
-      .map(e => e.trim())
-      .filter(e => e !== "");
+      .map((e) => e.trim())
+      .filter((e) => e !== "");
     const foremanName = (foreman || "").toString().trim();
 
     // Skip any row with missing names (prevents "Unknown")
     if (empNames.length === 0 || !foremanName) continue;
 
     const isToday = date.toDateString() === todayStr;
-    const isThisMonth = date.getMonth() === month && date.getFullYear() === year;
+    const isThisMonth =
+      date.getMonth() === month && date.getFullYear() === year;
     const isCompanyJob = company && company.toString().trim() !== "";
 
-  
     if (!foremanMap[foremanName]) {
-      foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+      foremanMap[foremanName] = {
+        daily: 0,
+        monthly: 0,
+        carsToday: 0,
+        carsMonth: 0,
+      };
     }
-
 
     // Zeena, Perfume, Wiper
     const specialServices = ["Zeena", "Perfume", "Wipers"];
     if (specialServices.includes(service)) {
-      if (!zeenahMap[service]) zeenahMap[service] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (!zeenahMap[service])
+        zeenahMap[service] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0,
+        };
       if (isToday) {
         zeenahMap[service].dailyCars++;
         zeenahMap[service].dailyAmt += serviceAmt;
@@ -571,7 +556,12 @@ function calc() {
     // Company
     if (isCompanyJob) {
       if (!companyMap[company]) {
-        companyMap[company] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+        companyMap[company] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0,
+        };
       }
       if (isToday) {
         companyMap[company].dailyAmt += serviceAmt;
@@ -585,7 +575,13 @@ function calc() {
 
     // Oil
     if (oilChange && oilChange.toString().trim() !== "") {
-      if (!oilMap[oilChange]) oilMap[oilChange] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (!oilMap[oilChange])
+        oilMap[oilChange] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0,
+        };
       if (isToday) {
         oilMap[oilChange].dailyAmt += serviceAmt;
         oilMap[oilChange].dailyCars++;
@@ -598,8 +594,9 @@ function calc() {
 
     // Employee (include all)
     const splitAmt = serviceAmt / empNames.length;
-    empNames.forEach(name => {
-      if (!empMap[name]) empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+    empNames.forEach((name) => {
+      if (!empMap[name])
+        empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
 
       if (isToday) {
         empMap[name].daily += splitAmt;
@@ -616,7 +613,6 @@ function calc() {
         empMap[name].carsMonth++;
       }
     });
-  
 
     // Foreman (exclude company)
     if (!isCompanyJob) {
@@ -664,37 +660,70 @@ function calc() {
   let currentRow = 2;
 
   // HEADER
-  sheet.getRange(currentRow, 13, 1, 5).merge().setValue("EARNINGS REPORT")
-    .setFontWeight("bold").setFontSize(18).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
+  sheet
+    .getRange(currentRow, 13, 1, 5)
+    .merge()
+    .setValue("EARNINGS REPORT")
+    .setFontWeight("bold")
+    .setFontSize(18)
+    .setFontFamily("IBM Plex Sans")
+    .setHorizontalAlignment("center");
   currentRow++;
-  sheet.getRange(currentRow, 13, 1, 5).merge()
-    .setValue("Last Updated: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy HH:mm:ss"))
-    .setFontSize(10).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
+  sheet
+    .getRange(currentRow, 13, 1, 5)
+    .merge()
+    .setValue(
+      "Last Updated: " +
+        Utilities.formatDate(
+          new Date(),
+          Session.getScriptTimeZone(),
+          "dd MMM yyyy HH:mm:ss",
+        ),
+    )
+    .setFontSize(10)
+    .setFontFamily("IBM Plex Sans")
+    .setHorizontalAlignment("center");
   currentRow += 2;
 
   // SUMMARY HEADING
-  sheet.getRange(currentRow, 13, 1, 5).merge().setValue("DAILY & MONTHLY SUMMARY")
-    .setFontWeight("bold").setFontSize(17).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
+  sheet
+    .getRange(currentRow, 13, 1, 5)
+    .merge()
+    .setValue("DAILY & MONTHLY SUMMARY")
+    .setFontWeight("bold")
+    .setFontSize(17)
+    .setFontFamily("IBM Plex Sans")
+    .setHorizontalAlignment("center");
   currentRow++;
 
   // Subheadings for two distinct tables
-  sheet.getRange(currentRow, 13, 1, 2).merge().setValue("WITHOUT COMPANY")
-    .setFontWeight("bold").setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
-  sheet.getRange(currentRow, 16, 1, 2).merge().setValue("WITH COMPANY")
-    .setFontWeight("bold").setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
+  sheet
+    .getRange(currentRow, 13, 1, 2)
+    .merge()
+    .setValue("WITHOUT COMPANY")
+    .setFontWeight("bold")
+    .setFontFamily("IBM Plex Sans")
+    .setHorizontalAlignment("center");
+  sheet
+    .getRange(currentRow, 16, 1, 2)
+    .merge()
+    .setValue("WITH COMPANY")
+    .setFontWeight("bold")
+    .setFontFamily("IBM Plex Sans")
+    .setHorizontalAlignment("center");
   currentRow++;
 
   const summaryDataExcl = [
     ["Earnings Today", formatMoney(totalTodayExcl)],
     ["Cars Washed Today", carsTodayExcl],
     ["Monthly Earnings", formatMoney(totalMonthExcl)],
-    ["Cars Washed this Month", carsMonthExcl]
+    ["Cars Washed this Month", carsMonthExcl],
   ];
   const summaryDataIncl = [
     ["Earnings Today", formatMoney(totalTodayIncl)],
     ["Cars Washed Today", carsTodayIncl],
     ["Monthly Earnings", formatMoney(totalMonthIncl)],
-    ["Cars Washed this Month", carsMonthIncl]
+    ["Cars Washed this Month", carsMonthIncl],
   ];
 
   // Left table
@@ -702,38 +731,61 @@ function calc() {
   exclRange.setValues(summaryDataExcl).setFontFamily("IBM Plex Sans");
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 13, summaryDataExcl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Sans").setFontSize(14);
+  sheet
+    .getRange(currentRow, 13, summaryDataExcl.length, 1)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("left")
+    .setWrap(true)
+    .setFontFamily("IBM Plex Sans")
+    .setFontSize(14);
 
   // Right table
   const inclRange = sheet.getRange(currentRow, 16, summaryDataIncl.length, 2);
   inclRange.setValues(summaryDataIncl).setFontFamily("IBM Plex Sans");
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
-  sheet.getRange(currentRow, 16, summaryDataIncl.length, 1).setFontWeight("bold").setHorizontalAlignment("left").setWrap(true).setFontFamily("IBM Plex Sans").setFontSize(14);
+  sheet
+    .getRange(currentRow, 16, summaryDataIncl.length, 1)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("left")
+    .setWrap(true)
+    .setFontFamily("IBM Plex Sans")
+    .setFontSize(14);
 
   // FORMAT SUMMARY VALUES
 
-sheet.getRange(currentRow, 14, summaryDataExcl.length, 1)
-  .setFontFamily("IBM Plex Sans")
-  .setFontSize(16)
-  .setFontWeight("bold")
-  .setHorizontalAlignment("right");
+  sheet
+    .getRange(currentRow, 14, summaryDataExcl.length, 1)
+    .setFontFamily("IBM Plex Sans")
+    .setFontSize(16)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("right");
 
-sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
-  .setFontFamily("IBM Plex Sans")
-  .setFontSize(16)
-  .setFontWeight("bold")
-  .setHorizontalAlignment("right");
+  sheet
+    .getRange(currentRow, 17, summaryDataIncl.length, 1)
+    .setFontFamily("IBM Plex Sans")
+    .setFontSize(16)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("right");
 
   currentRow += summaryDataExcl.length + 2;
 
   // Generic table function
   function writeTable(title, headers, rows, leftAlignCols = [0]) {
-    sheet.getRange(currentRow, 13, 1, headers.length).merge().setValue(title)
-      .setFontWeight("bold").setFontSize(16).setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
+    sheet
+      .getRange(currentRow, 13, 1, headers.length)
+      .merge()
+      .setValue(title)
+      .setFontWeight("bold")
+      .setFontSize(16)
+      .setFontFamily("IBM Plex Sans")
+      .setHorizontalAlignment("center");
     currentRow++;
-    sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers])
-      .setFontWeight("bold").setFontFamily("IBM Plex Sans");
+    sheet
+      .getRange(currentRow, 13, 1, headers.length)
+      .setValues([headers])
+      .setFontWeight("bold")
+      .setFontFamily("IBM Plex Sans");
     currentRow++;
     if (rows.length) {
       const range = sheet.getRange(currentRow, 13, rows.length, headers.length);
@@ -748,13 +800,11 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
       // Alignment
       range.setHorizontalAlignment("right");
-      leftAlignCols.forEach(c => {
+      leftAlignCols.forEach((c) => {
         const range = sheet.getRange(currentRow, 13 + c, rows.length, 1);
         range.setHorizontalAlignment("left");
         range.setFontWeight("bold");
       });
-
-
 
       currentRow += rows.length + 2;
     } else {
@@ -762,31 +812,41 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
     }
   }
 
-    // Top Performer (by cars washed this month)
-  let topEmp = "", topCars = 0;
+  // Top Performer (by cars washed this month)
+  let topEmp = "",
+    topCars = 0;
   for (let emp in empMap) {
     if (empMap[emp].carsMonth > topCars) {
       topCars = empMap[emp].carsMonth;
       topEmp = emp;
     }
   }
-  sheet.getRange(currentRow, 13, 1, 5).merge().setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
-    .setFontWeight("bold").setFontFamily("IBM Plex Sans").setHorizontalAlignment("center");
+  sheet
+    .getRange(currentRow, 13, 1, 5)
+    .merge()
+    .setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
+    .setFontWeight("bold")
+    .setFontFamily("IBM Plex Sans")
+    .setHorizontalAlignment("center");
   currentRow += 2;
 
   // Employee
-  const empList = Object.keys(empMap).sort((a, b) => empMap[b].carsToday - empMap[a].carsToday);
+  const empList = Object.keys(empMap).sort(
+    (a, b) => empMap[b].carsToday - empMap[a].carsToday,
+  );
   const now = new Date();
 
-  const empRows = empList.map(name => {
-
+  const empRows = empList.map((name) => {
     let lastWorkText = "No work today";
 
     if (empLastWorkToday[name]) {
-
       const last = empLastWorkToday[name];
       const diffMinutes = Math.floor((now - last) / 60000);
-      const time = Utilities.formatDate(last, Session.getScriptTimeZone(), "HH:mm");
+      const time = Utilities.formatDate(
+        last,
+        Session.getScriptTimeZone(),
+        "HH:mm",
+      );
 
       let timeText;
 
@@ -799,7 +859,6 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
       }
 
       lastWorkText = `${timeText} ago (${time})`;
-
     }
 
     return [
@@ -807,87 +866,137 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
       formatMoney(empMap[name].daily),
       empMap[name].carsToday,
       formatMoney(empMap[name].monthly),
-      empMap[name].carsMonth
+      empMap[name].carsMonth,
     ];
-    
   });
 
   writeTable(
     "EMPLOYEE PERFORMANCE",
-    ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"],
-    empRows
+    [
+      "NAME",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    empRows,
   );
 
-
-
   // Foreman
-  const foremanList = Object.keys(foremanMap).sort((a, b) => foremanMap[b].daily - foremanMap[a].daily);
-  const foremanRows = foremanList.map(name => [
+  const foremanList = Object.keys(foremanMap).sort(
+    (a, b) => foremanMap[b].daily - foremanMap[a].daily,
+  );
+  const foremanRows = foremanList.map((name) => [
     name,
     formatMoney(foremanMap[name].daily),
     foremanMap[name].carsToday,
     formatMoney(foremanMap[name].monthly),
-    foremanMap[name].carsMonth
+    foremanMap[name].carsMonth,
   ]);
-  writeTable("FOREMAN PERFORMANCE", ["NAME", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], foremanRows);
+  writeTable(
+    "FOREMAN PERFORMANCE",
+    [
+      "NAME",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    foremanRows,
+  );
 
   // Company
   const compList = Object.keys(companyMap);
-  const compRows = compList.map(name => [
+  const compRows = compList.map((name) => [
     name,
     formatMoney(companyMap[name].dailyAmt),
     companyMap[name].dailyCars,
     formatMoney(companyMap[name].monthlyAmt),
-    companyMap[name].monthlyCars
+    companyMap[name].monthlyCars,
   ]);
-  writeTable("COMPANY JOBS", ["COMPANY", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], compRows);
+  writeTable(
+    "COMPANY JOBS",
+    [
+      "COMPANY",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    compRows,
+  );
   // Zeena + Perfume + Wiper table
   const zeenahList = Object.keys(zeenahMap);
-  const zeenahRows = zeenahList.map(svc => [
+  const zeenahRows = zeenahList.map((svc) => [
     svc,
     formatMoney(zeenahMap[svc].dailyAmt),
     zeenahMap[svc].dailyCars,
     formatMoney(zeenahMap[svc].monthlyAmt),
-    zeenahMap[svc].monthlyCars
+    zeenahMap[svc].monthlyCars,
   ]);
-  writeTable("ZEENA SERVICE", ["SERVICE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], zeenahRows, [0]);
+  writeTable(
+    "ZEENA SERVICE",
+    [
+      "SERVICE",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    zeenahRows,
+    [0],
+  );
 
   // Oil Change
   const oilList = Object.keys(oilMap);
-  const oilRows = oilList.map(oilType => [
+  const oilRows = oilList.map((oilType) => [
     oilType,
     formatMoney(oilMap[oilType].dailyAmt),
     oilMap[oilType].dailyCars,
     formatMoney(oilMap[oilType].monthlyAmt),
-    oilMap[oilType].monthlyCars
+    oilMap[oilType].monthlyCars,
   ]);
-  writeTable("OIL CHANGE", ["OIL TYPE", "EARNINGS TODAY", "CARS TODAY", "EARNINGS THIS MONTH", "CARS THIS MONTH"], oilRows, [0]);
-  
+  writeTable(
+    "OIL CHANGE",
+    [
+      "OIL TYPE",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    oilRows,
+    [0],
+  );
+
   if (oilRows.length) {
-    sheet.getRange(currentRow - oilRows.length - 2, 13, oilRows.length, 1).setWrap(true);
+    sheet
+      .getRange(currentRow - oilRows.length - 2, 13, oilRows.length, 1)
+      .setWrap(true);
   }
 
   // Enterprise Jobs
   if (enterpriseJobs && enterpriseJobs.length) {
-    const enterpriseRows = enterpriseJobs.map(row => {
-    const date = row[0] ? new Date(row[0]) : "";
+    const enterpriseRows = enterpriseJobs.map((row) => {
+      const date = row[0] ? new Date(row[0]) : "";
       const price = parseFloat(row[5]) || 0;
       const formattedPrice = `AED ${price.toLocaleString("en-US")}`;
-      return [date, row[3], row[4], formattedPrice, row[6], row[8]]; 
+      return [date, row[3], row[4], formattedPrice, row[6], row[8]];
       // columns: Date, License Plate, Service, Price, Company, Detail
     });
 
     writeTable(
       "PRIVATE OFFICE VEHICLE LOG",
       ["DATE", "LICENSE PLATE", "SERVICE", "PRICE", "COMPANY", "DETAIL"],
-      enterpriseRows
+      enterpriseRows,
     );
 
     // Adjust alignment and bold manually after writing
     const startRow = currentRow - enterpriseRows.length - 2; // writeTable moves currentRow
     const sheetRange = sheet.getRange(startRow, 13, enterpriseRows.length, 6);
-    
-    sheet.getRange(startRow, 13, enterpriseRows.length, 1)
+
+    sheet
+      .getRange(startRow, 13, enterpriseRows.length, 1)
       .setNumberFormat("dd/MM/yy");
 
     // Bold all
@@ -895,25 +1004,29 @@ sheet.getRange(currentRow, 17, summaryDataIncl.length, 1)
 
     // Alignment
     for (let c = 0; c < 6; c++) {
-      const colRange = sheet.getRange(startRow, 13 + c, enterpriseRows.length, 1);
-      if (c === 1) colRange.setHorizontalAlignment("center"); // License Plate
-      else if (c === 3) colRange.setHorizontalAlignment("right"); // Price
+      const colRange = sheet.getRange(
+        startRow,
+        13 + c,
+        enterpriseRows.length,
+        1,
+      );
+      if (c === 1)
+        colRange.setHorizontalAlignment("center"); // License Plate
+      else if (c === 3)
+        colRange.setHorizontalAlignment("right"); // Price
       else colRange.setHorizontalAlignment("left"); // Rest
     }
     sheet.getRange(startRow, 18, enterpriseRows.length, 1).setWrap(true); // Column Q
   }
 
   updateTelegramCache();
-
 }
 
 function auditPriceChange(e) {
-
   const lock = LockService.getScriptLock();
-  lock.waitLock(5000);   // wait up to 5 seconds for previous edit to finish
+  lock.waitLock(5000); // wait up to 5 seconds for previous edit to finish
 
   try {
-
     const MAIN = "Form Responses 1";
     const AUDIT = "PriceAudit";
 
@@ -929,15 +1042,14 @@ function auditPriceChange(e) {
 
     if (row === 1) return;
     if (col !== SERVICE_COL && col !== PRICE_COL) return;
-    
+
     if (col === SERVICE_COL && e.oldValue === e.value) return;
     if (col === PRICE_COL && e.oldValue === e.value) return;
-    
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const audit = ss.getSheetByName(AUDIT);
 
-    const rowData = sheet.getRange(row,1,1,10).getValues()[0];
+    const rowData = sheet.getRange(row, 1, 1, 10).getValues()[0];
 
     const timestamp = rowData[0];
     const entryForeman = rowData[1];
@@ -966,9 +1078,9 @@ function auditPriceChange(e) {
       }
     }
 
-// Highlight correct row even if sheet sorted
-sheet.getRange(correctRow, col).setBackground("#f7c6c6");
-SpreadsheetApp.flush();
+    // Highlight correct row even if sheet sorted
+    sheet.getRange(correctRow, col).setBackground("#f7c6c6");
+    SpreadsheetApp.flush();
 
     let oldService = service;
     let newService = service;
@@ -977,33 +1089,28 @@ SpreadsheetApp.flush();
     let newPrice = price;
 
     if (col === SERVICE_COL) {
-
       if (typeof e.oldValue !== "undefined") {
         oldService = e.oldValue;
       } else if (existingRow) {
-        oldService = audit.getRange(existingRow,5).getValue();
+        oldService = audit.getRange(existingRow, 5).getValue();
       } else {
         oldService = service;
       }
 
       newService = service;
-
     }
 
     if (col === PRICE_COL) {
-
       if (typeof e.oldValue === "undefined") return;
 
       oldPrice = e.oldValue;
       newPrice = price;
-
     }
 
     const data = sheet.getDataRange().getValues();
     let activeForeman = entryForeman;
 
     for (let i = 1; i < data.length; i++) {
-
       const t = new Date(data[i][0]);
 
       if (t <= changeTime) {
@@ -1011,7 +1118,6 @@ SpreadsheetApp.flush();
       } else {
         break;
       }
-
     }
 
     const lastRow = audit.getLastRow();
@@ -1019,16 +1125,14 @@ SpreadsheetApp.flush();
     let existingRow = null;
 
     if (lastRow >= 2) {
-
-      const newest = audit.getRange(2,1,1,10).getValues()[0];
+      const newest = audit.getRange(2, 1, 1, 10).getValues()[0];
 
       const logTimestamp = new Date(newest[1]).getTime();
       const logPlate = newest[2];
       const previousChangeTime = new Date(newest[0]).getTime();
 
       const sameJob =
-        logTimestamp === new Date(timestamp).getTime() &&
-        logPlate === license;
+        logTimestamp === new Date(timestamp).getTime() && logPlate === license;
 
       const minutesSinceLastChange =
         (changeTime.getTime() - previousChangeTime) / 60000;
@@ -1036,7 +1140,6 @@ SpreadsheetApp.flush();
       if (sameJob && minutesSinceLastChange <= MERGE_WINDOW_MINUTES) {
         existingRow = 2;
       }
-
     }
 
     const values = [
@@ -1049,12 +1152,11 @@ SpreadsheetApp.flush();
       entryForeman,
       oldPrice,
       newPrice,
-      activeForeman
+      activeForeman,
     ];
 
     if (existingRow) {
-
-      const prev = audit.getRange(existingRow,1,1,10).getValues()[0];
+      const prev = audit.getRange(existingRow, 1, 1, 10).getValues()[0];
 
       let finalOldService = prev[3];
       let finalNewService = prev[4];
@@ -1062,17 +1164,13 @@ SpreadsheetApp.flush();
       let finalNewPrice = prev[8];
 
       if (col === SERVICE_COL) {
-
         finalOldService = prev[3] || oldService;
         finalNewService = newService;
-
       }
 
       if (col === PRICE_COL) {
-
         finalOldPrice = prev[7] || oldPrice;
         finalNewPrice = newPrice;
-
       }
 
       const mergedValues = [
@@ -1085,51 +1183,40 @@ SpreadsheetApp.flush();
         entryForeman,
         finalOldPrice,
         finalNewPrice,
-        activeForeman
+        activeForeman,
       ];
 
-      audit.getRange(existingRow,1,1,10).setValues([mergedValues]);
-
+      audit.getRange(existingRow, 1, 1, 10).setValues([mergedValues]);
     } else {
-
       audit.insertRowAfter(1);
 
       const newRow = 2;
 
-      audit.getRange(newRow,1,1,10).setValues([values]);
-
-   
+      audit.getRange(newRow, 1, 1, 10).setValues([values]);
 
       SpreadsheetApp.flush();
 
       // Copy formatting template from Row 1 (K–T) → new row (A–J)
-      audit.getRange(1, 11, 1, 10)
+      audit
+        .getRange(1, 11, 1, 10)
         .copyTo(audit.getRange(newRow, 1, 1, 10), { formatOnly: true });
 
-      audit.getRange(newRow,1,1,10)
-        .setFontColor("black");
-
+      audit.getRange(newRow, 1, 1, 10).setFontColor("black");
     }
 
     if (audit.getLastRow() > 2) {
-
-      audit.getRange(2,1,audit.getLastRow()-1,10)
-        .sort({column:1,ascending:false});
-
+      audit
+        .getRange(2, 1, audit.getLastRow() - 1, 10)
+        .sort({ column: 1, ascending: false });
     }
-
   } finally {
-
     lock.releaseLock();
-
   }
-
 }
 
-
-
 function processFormSubmission() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const sheet =
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
   const lastRow = sheet.getLastRow();
   const dataLastCol = 11; // A–J
 
@@ -1137,35 +1224,23 @@ function processFormSubmission() {
   if (lastRow > 1) {
     const sortRange = sheet.getRange(2, 1, lastRow - 1, dataLastCol);
     sortRange.sort({ column: 1, ascending: false });
-    
   }
 
   // 2. APPLY TEMPLATE FORMATTING FROM ROW 1 T–AC → NEW ROW A–H
 
   if (lastRow >= 2) {
-
     const templateRange = sheet.getRange(1, 20, 1, 11);
     // Row 1, Column 20 = T
     // 8 columns = T–AC
-
 
     const targetRange = sheet.getRange(2, 1, 1, 11);
     // Row 2, Column 1 = A
     // 8 columns = A–H
 
-
-    templateRange.copyFormatToRange(
-      sheet,
-      1,
-      11,
-      2,
-      2
-    );
-   
-
+    templateRange.copyFormatToRange(sheet, 1, 11, 2, 2);
   }
 
-/*
+  /*
   // 4. Insert images based on employee name in column C into column I (after sorting)
   const data = sheet.getDataRange().getValues();
   const employeeImageMap = {
@@ -1230,9 +1305,7 @@ function hidePrice() {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
 
-  ui.createMenu("Al Raked")
-    .addItem("Performance Report", "calc")
-    .addToUi();
+  ui.createMenu("Al Raked").addItem("Performance Report", "calc").addToUi();
 
   ui.createMenu("Price")
     .addItem("View Price", "viewPrice")
@@ -1241,7 +1314,6 @@ function onOpen() {
 }
 
 function emailPerformanceReport() {
-
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Form Responses 1");
   const auditSheet = ss.getSheetByName("PriceAudit");
@@ -1253,7 +1325,10 @@ function emailPerformanceReport() {
   const timeZone = Session.getScriptTimeZone();
 
   const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy");
-  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy").replace(/ /g,"_");
+  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy").replace(
+    / /g,
+    "_",
+  );
 
   // MAIN REPORT PDF
   const url =
@@ -1262,13 +1337,12 @@ function emailPerformanceReport() {
     `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
 
   const options = {
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
   };
 
   const mainPdf = UrlFetchApp.fetch(url, options)
     .getBlob()
     .setName(`${fileDate}_Al_Raked_Performance_Report.pdf`);
-
 
   // ---------- PRICE AUDIT PROCESS ----------
 
@@ -1278,20 +1352,17 @@ function emailPerformanceReport() {
   let rowsToday = [];
 
   for (let i = 1; i < auditData.length; i++) {
-
     const changeTime = new Date(auditData[i][0]);
 
     if (changeTime.toDateString() === today.toDateString()) {
       rowsToday.push(auditData[i]);
     }
-
   }
 
   let attachments = [mainPdf];
   let auditText = "No price changes recorded today.";
 
   if (rowsToday.length > 0) {
-
     const tempName = "TEMP_AUDIT_EXPORT";
 
     let temp = ss.getSheetByName(tempName);
@@ -1300,22 +1371,20 @@ function emailPerformanceReport() {
 
     temp = ss.insertSheet(tempName);
 
-    const headerRange = auditSheet.getRange(1,1,1,10);
-    headerRange.copyTo(temp.getRange(1,1), {contentsOnly:false});
+    const headerRange = auditSheet.getRange(1, 1, 1, 10);
+    headerRange.copyTo(temp.getRange(1, 1), { contentsOnly: false });
 
     let writeRow = 2;
 
     for (let i = 1; i < auditData.length; i++) {
-
       const changeTime = new Date(auditData[i][0]);
 
       if (changeTime.toDateString() === today.toDateString()) {
-
-        auditSheet.getRange(i+1,1,1,10)
-          .copyTo(temp.getRange(writeRow,1), {contentsOnly:false});
+        auditSheet
+          .getRange(i + 1, 1, 1, 10)
+          .copyTo(temp.getRange(writeRow, 1), { contentsOnly: false });
 
         writeRow++;
-
       }
     }
 
@@ -1337,7 +1406,6 @@ function emailPerformanceReport() {
     ss.deleteSheet(temp);
   }
 
-
   // SEND EMAIL
   MailApp.sendEmail({
     to: "alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
@@ -1346,20 +1414,22 @@ function emailPerformanceReport() {
       "Sir,\n\n" +
       "The system has completed today's performance analysis.\n\n" +
       "Summary:\n" +
-      auditText + "\n\n" +
+      auditText +
+      "\n\n" +
       "All operational metrics have been compiled and verified.\n" +
       "Detailed reports are attached for your review.\n\n" +
       "Awaiting further instructions.",
-    attachments: attachments
+    attachments: attachments,
   });
-
 }
 
-
 function emailMonthlyReport() {
-
   const today = new Date();
-  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const tomorrow = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() + 1,
+  );
 
   // STOP if today is NOT the last day of the month
   if (tomorrow.getMonth() === today.getMonth()) {
@@ -1375,14 +1445,11 @@ function emailMonthlyReport() {
   const fileDate = Utilities.formatDate(today, tz, "MMMM_yyyy");
 
   const email = "imhaninmohd@gmail.com";
-  
-
 
   // Generate latest report
   calc();
 
   SpreadsheetApp.flush();
-
 
   // ---------------------------
   // 1. COPY PERFORMANCE REPORT
@@ -1391,28 +1458,28 @@ function emailMonthlyReport() {
   const reportSheetName = "TEMP_MONTHLY_REPORT";
   const logSheetName = "TEMP_PRIVATE_LOG";
 
-  if (ss.getSheetByName(reportSheetName)) ss.deleteSheet(ss.getSheetByName(reportSheetName));
-  if (ss.getSheetByName(logSheetName)) ss.deleteSheet(ss.getSheetByName(logSheetName));
+  if (ss.getSheetByName(reportSheetName))
+    ss.deleteSheet(ss.getSheetByName(reportSheetName));
+  if (ss.getSheetByName(logSheetName))
+    ss.deleteSheet(ss.getSheetByName(logSheetName));
 
   const tempReport = ss.insertSheet(reportSheetName);
 
   // Copy the report block (M:R area)
   const reportRange = sheet.getRange("M1:R400");
 
-  reportRange.copyTo(tempReport.getRange("A1"), {contentsOnly:false});
+  reportRange.copyTo(tempReport.getRange("A1"), { contentsOnly: false });
   // Ensure readable PDF layout
   tempReport.setColumnWidths(1, 6, 140); // Fit A–F across page
-  tempReport.setColumnWidth(1, 260);     // Wider title column
+  tempReport.setColumnWidth(1, 260); // Wider title column
   tempReport.getRange("A1:F400").setWrap(true);
   tempReport.setFrozenRows(2);
-
 
   // -----------------------------------
   // 2. CHANGE REPORT TITLE
   // -----------------------------------
 
   tempReport.getRange("A2").setValue(`AL RAKED EARNINGS REPORT ${monthName}`);
-
 
   // -----------------------------------
   // 3. REMOVE PRIVATE OFFICE LOG
@@ -1421,18 +1488,13 @@ function emailMonthlyReport() {
   const values = tempReport.getDataRange().getValues();
 
   for (let i = 0; i < values.length; i++) {
-
     const cell = values[i][0];
 
     if (cell && cell.toString().includes("PRIVATE OFFICE VEHICLE LOG")) {
-
-      tempReport.deleteRows(i+1, values.length-i);
+      tempReport.deleteRows(i + 1, values.length - i);
       break;
-
     }
-
   }
-
 
   // -----------------------------------
   // 4. EXPORT REPORT PDF
@@ -1444,15 +1506,12 @@ function emailMonthlyReport() {
     `&pagenumbers=false&gridlines=false&fzr=false&gid=${tempReport.getSheetId()}`;
 
   const options = {
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
   };
 
   const pdfBlob = UrlFetchApp.fetch(pdfUrl, options)
     .getBlob()
     .setName(`Al_Raked_Earnings_Report_${fileDate}.pdf`);
-
-
-
 
   // -----------------------------------
   // EXTRACT PRIVATE OFFICE LOG DIRECTLY
@@ -1464,7 +1523,6 @@ function emailMonthlyReport() {
 
   // locate the log section
   for (let i = 0; i < reportData.length; i++) {
-
     if (
       reportData[i][0] &&
       reportData[i][0].toString().includes("PRIVATE OFFICE VEHICLE LOG")
@@ -1472,34 +1530,26 @@ function emailMonthlyReport() {
       headerRow = i + 1;
       break;
     }
-
   }
 
   const tempLog = ss.insertSheet(logSheetName);
 
   if (headerRow !== -1) {
-
     let rows = [];
 
     for (let i = headerRow; i < reportData.length; i++) {
-
       const row = reportData[i];
 
       // stop when the table ends
       if (row.join("").trim() === "") break;
 
-      rows.push(row.slice(0,6));
-
+      rows.push(row.slice(0, 6));
     }
 
     if (rows.length) {
-      tempLog.getRange(1,1,rows.length,rows[0].length).setValues(rows);
+      tempLog.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
     }
-    
-
   }
-
-
 
   // -----------------------------------
   // 6. EXPORT EXCEL FILE
@@ -1515,7 +1565,9 @@ function emailMonthlyReport() {
   const logData = tempLog.getDataRange().getValues();
 
   if (logData.length > 0) {
-    exportSheet.getRange(1,1,logData.length,logData[0].length).setValues(logData);
+    exportSheet
+      .getRange(1, 1, logData.length, logData[0].length)
+      .setValues(logData);
   }
 
   // ---------- FORMAT PRIVATE LOG SHEET ----------
@@ -1531,23 +1583,23 @@ function emailMonthlyReport() {
   // alignment consistency
   exportSheet.getRange("A:A").setHorizontalAlignment("center"); // DATE
   exportSheet.getRange("B:B").setHorizontalAlignment("center"); // PLATE
-  exportSheet.getRange("C:C").setHorizontalAlignment("left");   // SERVICE
-  exportSheet.getRange("D:D").setHorizontalAlignment("right");  // PRICE
-  exportSheet.getRange("E:E").setHorizontalAlignment("left");   // COMPANY
-  exportSheet.getRange("F:F").setHorizontalAlignment("left");   // DETAIL
+  exportSheet.getRange("C:C").setHorizontalAlignment("left"); // SERVICE
+  exportSheet.getRange("D:D").setHorizontalAlignment("right"); // PRICE
+  exportSheet.getRange("E:E").setHorizontalAlignment("left"); // COMPANY
+  exportSheet.getRange("F:F").setHorizontalAlignment("left"); // DETAIL
 
   // wrap long detail text
   exportSheet.getRange("F:F").setWrap(true);
 
   // header formatting
-  exportSheet.getRange("1:1")
+  exportSheet
+    .getRange("1:1")
     .setFontWeight("bold")
     .setHorizontalAlignment("center");
 
   SpreadsheetApp.flush();
 
-  const xlsxUrl =
-    `https://docs.google.com/spreadsheets/d/${tempSpreadsheet.getId()}/export?format=xlsx`;
+  const xlsxUrl = `https://docs.google.com/spreadsheets/d/${tempSpreadsheet.getId()}/export?format=xlsx`;
 
   const excelBlob = UrlFetchApp.fetch(xlsxUrl, options)
     .getBlob()
@@ -1556,21 +1608,19 @@ function emailMonthlyReport() {
   // cleanup spreadsheet
   DriveApp.getFileById(tempSpreadsheet.getId()).setTrashed(true);
 
-
-
-
   // -----------------------------------
   // 7. SEND EMAIL
   // -----------------------------------
 
   MailApp.sendEmail({
-
-  to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com",
+    to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com",
     subject: `Al Raked Monthly Earnings Report - ${monthName}`,
 
     body:
       "Sir,\n\n" +
-      "Monthly consolidation complete for " + monthName + ".\n\n" +
+      "Monthly consolidation complete for " +
+      monthName +
+      ".\n\n" +
       "Included in this transmission:\n" +
       "1. Earnings performance report (PDF)\n" +
       "2. Private Office vehicle log (Excel)\n\n" +
@@ -1578,11 +1628,8 @@ function emailMonthlyReport() {
       "Systems are aligned for the upcoming cycle.\n\n" +
       "Please review at your convenience.",
 
-    attachments: [pdfBlob, excelBlob]
-
+    attachments: [pdfBlob, excelBlob],
   });
-
-
 
   // -----------------------------------
   // 8. CLEAN UP
@@ -1590,32 +1637,27 @@ function emailMonthlyReport() {
 
   ss.deleteSheet(tempReport);
   ss.deleteSheet(tempLog);
-
 }
 
-
 function cleanSlateProtocol() {
-
   const today = new Date();
   const tz = Session.getScriptTimeZone();
 
   // SAFETY CHECK
   if (today.getDate() !== 1) {
-    Logger.log("Clean Slate Protocol aborted: today is not the first of the month.");
+    Logger.log(
+      "Clean Slate Protocol aborted: today is not the first of the month.",
+    );
     return;
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  const sheetsToReset = [
-    "Form Responses 1",
-    "PriceAudit"
-  ];
+  const sheetsToReset = ["Form Responses 1", "PriceAudit"];
 
   let clearedSheets = [];
 
-  sheetsToReset.forEach(name => {
-
+  sheetsToReset.forEach((name) => {
     const sheet = ss.getSheetByName(name);
     if (!sheet) return;
 
@@ -1623,14 +1665,12 @@ function cleanSlateProtocol() {
     const lastCol = sheet.getLastColumn();
 
     if (lastRow > 1) {
-
       // Clear content
-      sheet.getRange(2,1,lastRow-1,lastCol).clearContent();
+      sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
 
       // Reset background colors (Service + Price columns)
-      sheet.getRange(2, 5, lastRow-1, 1).setBackground(null); // Column E
-      sheet.getRange(2, 6, lastRow-1, 1).setBackground(null); // Column F
-
+      sheet.getRange(2, 5, lastRow - 1, 1).setBackground(null); // Column E
+      sheet.getRange(2, 6, lastRow - 1, 1).setBackground(null); // Column F
 
       // ---- LIMIT TO 80 ROWS ----
       const MAX_ROWS = 81; // Row 1 header + 80 rows
@@ -1639,10 +1679,8 @@ function cleanSlateProtocol() {
         sheet.deleteRows(MAX_ROWS + 1, sheet.getMaxRows() - MAX_ROWS);
       }
 
-
       clearedSheets.push(name);
     }
-    
   });
 
   SpreadsheetApp.flush();
@@ -1656,20 +1694,19 @@ function cleanSlateProtocol() {
     body:
       "Sir,\n\n" +
       "Clean Slate Protocol executed successfully.\n\n" +
-      "Timestamp: " + dateText + "\n\n" +
+      "Timestamp: " +
+      dateText +
+      "\n\n" +
       "The following systems have been reset:\n" +
-      clearedSheets.join("\n") + "\n\n" +
+      clearedSheets.join("\n") +
+      "\n\n" +
       "Structural integrity confirmed. Headers remain intact.\n" +
       "The system is now fully prepared for the new operational cycle.\n\n" +
       "All processes standing by.",
   });
-
 }
 
-
-
 function createCleanSlateTrigger() {
-
   const triggers = ScriptApp.getProjectTriggers();
 
   for (const t of triggers) {
@@ -1683,24 +1720,15 @@ function createCleanSlateTrigger() {
     .onMonthDay(1)
     .atHour(2)
     .create();
-
 }
 
-
-
-
 function createMonthlyEmailTrigger() {
-
   const triggers = ScriptApp.getProjectTriggers();
 
   for (const t of triggers) {
-
     if (t.getHandlerFunction() === "emailMonthlyReport") {
-
       ScriptApp.deleteTrigger(t);
-
     }
-
   }
 
   ScriptApp.newTrigger("emailMonthlyReport")
@@ -1709,11 +1737,9 @@ function createMonthlyEmailTrigger() {
     .nearMinute(50)
     .everyDays(1)
     .create();
-
 }
 
 function createAuditTrigger() {
-
   const triggers = ScriptApp.getProjectTriggers();
 
   for (const t of triggers) {
@@ -1726,21 +1752,21 @@ function createAuditTrigger() {
     .forSpreadsheet(SpreadsheetApp.getActive())
     .onEdit()
     .create();
-
 }
-
-
 
 function createTriggers() {
   // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
   for (const t of triggers) {
     const funcName = t.getHandlerFunction();
-    if (funcName === "calc" || funcName === "emailPerformanceReport") {
+    if (
+      funcName === "calc" ||
+      funcName === "emailPerformanceReport" ||
+      funcName === "saveYesterdaySnapshot"
+    ) {
       ScriptApp.deleteTrigger(t);
     }
   }
-
 
   // Run calc() at 11:30 PM daily (final update before email)
   ScriptApp.newTrigger("calc")
@@ -1757,21 +1783,29 @@ function createTriggers() {
     .nearMinute(30)
     .everyDays(1)
     .create();
+
+  // Save yesterday snapshot
+  ScriptApp.newTrigger("saveYesterdaySnapshot")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(45)
+    .everyDays(1)
+    .create();
 }
 function onFormSubmit(e) {
-
   processFormSubmission();
 
-  Utilities.sleep(2000);
 
   calc();
 
   const rowData = e.values;
 
-  sendTelegramEntry(rowData);
-
+  try {
+    sendTelegramEntry(rowData);
+  } catch (err) {
+    Logger.log("Telegram send failed: " + err);
+  }
 }
-
 
 //Duplicating sheet once a month
 
@@ -1791,13 +1825,13 @@ function duplicateSheetAtMonthEnd() {
     const shortMonth = Utilities.formatDate(
       now,
       Session.getScriptTimeZone(),
-      "MMM"
+      "MMM",
     );
 
     const shortYear = Utilities.formatDate(
       now,
       Session.getScriptTimeZone(),
-      "yy"
+      "yy",
     );
 
     const newName = `${shortMonth}'${shortYear}`;
@@ -1814,27 +1848,27 @@ function duplicateSheetAtMonthEnd() {
     const priceAuditSheet = ss.getSheetByName("PriceAudit");
 
     if (priceAuditSheet) {
-
       const targetIndex = priceAuditSheet.getIndex();
 
       ss.setActiveSheet(newSheet);
 
       ss.moveActiveSheet(targetIndex + 1);
-
     }
 
     // ---- PROTECT SHEET ----
 
-    const protection = newSheet.protect().setDescription("Locked monthly archive");
+    const protection = newSheet
+      .protect()
+      .setDescription("Locked monthly archive");
 
     const me = Session.getEffectiveUser();
 
     // Remove everyone except you
 
     protection.removeEditors(
-
-      protection.getEditors().filter(user => user.getEmail() !== me.getEmail())
-
+      protection
+        .getEditors()
+        .filter((user) => user.getEmail() !== me.getEmail()),
     );
 
     // Ensure you are added
@@ -1844,9 +1878,7 @@ function duplicateSheetAtMonthEnd() {
     // Disable domain editing
 
     if (protection.canDomainEdit()) {
-
       protection.setDomainEdit(false);
-
     }
   }
 }
@@ -1869,11 +1901,7 @@ function createMonthEndTrigger() {
     .create();
 }
 
-
-
-
 function emailExtendedShiftReport() {
-
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Form Responses 1");
 
@@ -1883,10 +1911,10 @@ function emailExtendedShiftReport() {
 
   const start = new Date(now);
   start.setDate(start.getDate() - 1);
-  start.setHours(0,0,0,0);
+  start.setHours(0, 0, 0, 0);
 
   const end = new Date(now);
-  end.setHours(23,59,59,999);
+  end.setHours(23, 59, 59, 999);
 
   const data = sheet.getDataRange().getValues();
 
@@ -1899,38 +1927,54 @@ function emailExtendedShiftReport() {
   const oilMap = {};
   let enterpriseJobs = [];
 
-  let totalTodayIncl = 0, totalMonthIncl = 0;
-  let totalTodayExcl = 0, totalMonthExcl = 0;
-  let carsTodayIncl = 0, carsMonthIncl = 0;
-  let carsTodayExcl = 0, carsMonthExcl = 0;
+  let totalTodayIncl = 0,
+    totalMonthIncl = 0;
+  let totalTodayExcl = 0,
+    totalMonthExcl = 0;
+  let carsTodayIncl = 0,
+    carsMonthIncl = 0;
+  let carsTodayExcl = 0,
+    carsMonthExcl = 0;
 
   const month = now.getMonth();
   const year = now.getFullYear();
 
   for (let i = 1; i < data.length; i++) {
-
-    const [timestamp, foreman, employee, licensePlate, service, serviceFee, company, oilChange, companyDetail, specialPrice] = data[i];
+    const [
+      timestamp,
+      foreman,
+      employee,
+      licensePlate,
+      service,
+      serviceFee,
+      company,
+      oilChange,
+      companyDetail,
+      specialPrice,
+    ] = data[i];
     if (!timestamp) continue;
 
     const date = new Date(timestamp);
 
     const isExtended = date >= start && date <= end;
-    const isThisMonth = date.getMonth() === month && date.getFullYear() === year;
+    const isThisMonth =
+      date.getMonth() === month && date.getFullYear() === year;
 
     let serviceAmt = 0;
     if (serviceFee && serviceFee.toString().toLowerCase() !== "free") {
       serviceAmt = parseFloat(serviceFee) || 0;
     }
 
-    let actualAmt = (specialPrice !== "" && specialPrice != null)
-      ? parseFloat(specialPrice) || 0
-      : serviceAmt;
+    let actualAmt =
+      specialPrice !== "" && specialPrice != null
+        ? parseFloat(specialPrice) || 0
+        : serviceAmt;
 
     const empNames = (employee || "")
       .toString()
       .split(/,|\s+/) // split by comma OR any space(s)
-      .map(e => e.trim())
-      .filter(e => e !== "");
+      .map((e) => e.trim())
+      .filter((e) => e !== "");
     const foremanName = (foreman || "").toString().trim();
 
     if (!empNames.length || !foremanName) continue;
@@ -1938,20 +1982,43 @@ function emailExtendedShiftReport() {
     const isCompanyJob = company && company.toString().trim() !== "";
 
     // -------- ENTERPRISE --------
-    if ((companyDetail && companyDetail.toString().trim() !== "") ||
-        (company && company.toString().trim() === "Private Office")) {
-      enterpriseJobs.push([timestamp, foreman, employee, licensePlate, service, actualAmt, company, oilChange, companyDetail]);
+    if (
+      (companyDetail && companyDetail.toString().trim() !== "") ||
+      (company && company.toString().trim() === "Private Office")
+    ) {
+      enterpriseJobs.push([
+        timestamp,
+        foreman,
+        employee,
+        licensePlate,
+        service,
+        actualAmt,
+        company,
+        oilChange,
+        companyDetail,
+      ]);
     }
 
     // -------- INIT --------
     if (!foremanMap[foremanName]) {
-      foremanMap[foremanName] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+      foremanMap[foremanName] = {
+        daily: 0,
+        monthly: 0,
+        carsToday: 0,
+        carsMonth: 0,
+      };
     }
 
     // -------- SPECIAL SERVICES --------
     const specialServices = ["Zeena", "Perfume", "Wipers"];
     if (specialServices.includes(service)) {
-      if (!zeenahMap[service]) zeenahMap[service] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (!zeenahMap[service])
+        zeenahMap[service] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0,
+        };
 
       if (isExtended) {
         zeenahMap[service].dailyCars++;
@@ -1966,7 +2033,12 @@ function emailExtendedShiftReport() {
     // -------- COMPANY --------
     if (isCompanyJob) {
       if (!companyMap[company]) {
-        companyMap[company] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+        companyMap[company] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0,
+        };
       }
 
       if (isExtended) {
@@ -1981,7 +2053,13 @@ function emailExtendedShiftReport() {
 
     // -------- OIL --------
     if (oilChange && oilChange.toString().trim() !== "") {
-      if (!oilMap[oilChange]) oilMap[oilChange] = { dailyAmt: 0, monthlyAmt: 0, dailyCars: 0, monthlyCars: 0 };
+      if (!oilMap[oilChange])
+        oilMap[oilChange] = {
+          dailyAmt: 0,
+          monthlyAmt: 0,
+          dailyCars: 0,
+          monthlyCars: 0,
+        };
 
       if (isExtended) {
         oilMap[oilChange].dailyAmt += serviceAmt;
@@ -1996,8 +2074,9 @@ function emailExtendedShiftReport() {
     // -------- EMPLOYEE --------
     const splitAmt = serviceAmt / empNames.length;
 
-    empNames.forEach(name => {
-      if (!empMap[name]) empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
+    empNames.forEach((name) => {
+      if (!empMap[name])
+        empMap[name] = { daily: 0, monthly: 0, carsToday: 0, carsMonth: 0 };
 
       if (isExtended) {
         empMap[name].daily += splitAmt;
@@ -2054,7 +2133,9 @@ function emailExtendedShiftReport() {
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
 
-  sheet.getRange(currentRow, 13, 1, 5).merge()
+  sheet
+    .getRange(currentRow, 13, 1, 5)
+    .merge()
     .setValue("EXTENDED SHIFT REPORT")
     .setFontWeight("bold")
     .setFontSize(18)
@@ -2062,7 +2143,9 @@ function emailExtendedShiftReport() {
 
   currentRow++;
 
-  sheet.getRange(currentRow, 13, 1, 5).merge()
+  sheet
+    .getRange(currentRow, 13, 1, 5)
+    .merge()
     .setValue("Yesterday + Today Combined")
     .setHorizontalAlignment("center");
 
@@ -2073,18 +2156,22 @@ function emailExtendedShiftReport() {
     ["Earnings Today", formatMoney(totalTodayExcl)],
     ["Cars Washed Today", carsTodayExcl],
     ["Monthly Earnings", formatMoney(totalMonthExcl)],
-    ["Cars Washed this Month", carsMonthExcl]
+    ["Cars Washed this Month", carsMonthExcl],
   ];
 
   const summaryDataIncl = [
     ["Earnings Today", formatMoney(totalTodayIncl)],
     ["Cars Washed Today", carsTodayIncl],
     ["Monthly Earnings", formatMoney(totalMonthIncl)],
-    ["Cars Washed this Month", carsMonthIncl]
+    ["Cars Washed this Month", carsMonthIncl],
   ];
 
-  sheet.getRange(currentRow, 13, summaryDataExcl.length, 2).setValues(summaryDataExcl);
-  sheet.getRange(currentRow, 16, summaryDataIncl.length, 2).setValues(summaryDataIncl);
+  sheet
+    .getRange(currentRow, 13, summaryDataExcl.length, 2)
+    .setValues(summaryDataExcl);
+  sheet
+    .getRange(currentRow, 16, summaryDataIncl.length, 2)
+    .setValues(summaryDataIncl);
 
   currentRow += summaryDataExcl.length + 3;
 
@@ -2095,7 +2182,9 @@ function emailExtendedShiftReport() {
     sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers]);
     currentRow++;
     if (rows.length) {
-      sheet.getRange(currentRow, 13, rows.length, headers.length).setValues(rows);
+      sheet
+        .getRange(currentRow, 13, rows.length, headers.length)
+        .setValues(rows);
       currentRow += rows.length + 2;
     } else {
       currentRow += 2;
@@ -2103,69 +2192,109 @@ function emailExtendedShiftReport() {
   }
 
   // -------- EMPLOYEE TABLE --------
-  const empRows = Object.keys(empMap).map(name => [
+  const empRows = Object.keys(empMap).map((name) => [
     name,
     formatMoney(empMap[name].daily),
     empMap[name].carsToday,
     formatMoney(empMap[name].monthly),
-    empMap[name].carsMonth
+    empMap[name].carsMonth,
   ]);
 
-  writeTable("EMPLOYEE PERFORMANCE",
-    ["NAME","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
-    empRows);
+  writeTable(
+    "EMPLOYEE PERFORMANCE",
+    [
+      "NAME",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    empRows,
+  );
 
   // -------- FOREMAN --------
-  const foremanRows = Object.keys(foremanMap).map(name => [
+  const foremanRows = Object.keys(foremanMap).map((name) => [
     name,
     formatMoney(foremanMap[name].daily),
     foremanMap[name].carsToday,
     formatMoney(foremanMap[name].monthly),
-    foremanMap[name].carsMonth
+    foremanMap[name].carsMonth,
   ]);
 
-  writeTable("FOREMAN PERFORMANCE",
-    ["NAME","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
-    foremanRows);
+  writeTable(
+    "FOREMAN PERFORMANCE",
+    [
+      "NAME",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    foremanRows,
+  );
 
   // -------- COMPANY --------
-  const compRows = Object.keys(companyMap).map(name => [
+  const compRows = Object.keys(companyMap).map((name) => [
     name,
     formatMoney(companyMap[name].dailyAmt),
     companyMap[name].dailyCars,
     formatMoney(companyMap[name].monthlyAmt),
-    companyMap[name].monthlyCars
+    companyMap[name].monthlyCars,
   ]);
 
-  writeTable("COMPANY JOBS",
-    ["COMPANY","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
-    compRows);
+  writeTable(
+    "COMPANY JOBS",
+    [
+      "COMPANY",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    compRows,
+  );
 
   // -------- ZEENA --------
-  const zeenahRows = Object.keys(zeenahMap).map(s => [
+  const zeenahRows = Object.keys(zeenahMap).map((s) => [
     s,
     formatMoney(zeenahMap[s].dailyAmt),
     zeenahMap[s].dailyCars,
     formatMoney(zeenahMap[s].monthlyAmt),
-    zeenahMap[s].monthlyCars
+    zeenahMap[s].monthlyCars,
   ]);
 
-  writeTable("ZEENA SERVICE",
-    ["SERVICE","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
-    zeenahRows);
+  writeTable(
+    "ZEENA SERVICE",
+    [
+      "SERVICE",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    zeenahRows,
+  );
 
   // -------- OIL --------
-  const oilRows = Object.keys(oilMap).map(o => [
+  const oilRows = Object.keys(oilMap).map((o) => [
     o,
     formatMoney(oilMap[o].dailyAmt),
     oilMap[o].dailyCars,
     formatMoney(oilMap[o].monthlyAmt),
-    oilMap[o].monthlyCars
+    oilMap[o].monthlyCars,
   ]);
 
-  writeTable("OIL CHANGE",
-    ["OIL TYPE","EARNINGS TODAY","CARS TODAY","EARNINGS THIS MONTH","CARS THIS MONTH"],
-    oilRows);
+  writeTable(
+    "OIL CHANGE",
+    [
+      "OIL TYPE",
+      "EARNINGS TODAY",
+      "CARS TODAY",
+      "EARNINGS THIS MONTH",
+      "CARS THIS MONTH",
+    ],
+    oilRows,
+  );
 
   SpreadsheetApp.flush();
 
@@ -2175,8 +2304,10 @@ function emailExtendedShiftReport() {
     `&gid=${sheet.getSheetId()}&size=A4&fitw=true`;
 
   const blob = UrlFetchApp.fetch(url, {
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }
-  }).getBlob().setName("Extended_Shift_Report.pdf");
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+  })
+    .getBlob()
+    .setName("Extended_Shift_Report.pdf");
 
   // -------- EMAIL --------
   MailApp.sendEmail({
@@ -2189,15 +2320,11 @@ function emailExtendedShiftReport() {
       "All performance metrics have been processed and verified.\n" +
       "The full report is attached for review.\n\n" +
       "No anomalies detected.",
-    attachments: [blob]
+    attachments: [blob],
   });
-
 }
 
-
-
 function testTelegramChannel() {
-
   sendTelegramEntry([
     new Date(),
     "Test Foreman",
@@ -2208,7 +2335,6 @@ function testTelegramChannel() {
     "",
     "",
     "",
-    ""
+    "",
   ]);
-
 }
