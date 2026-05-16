@@ -1,196 +1,129 @@
-const BOT_TOKEN =
-  "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
+const BOT_TOKEN = "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
 const WEB_APP_URL =
   "https://script.google.com/macros/s/AKfycbw_q3WkDF_g-Nen-r3Km68Uf_Z0Uvu4vUo8bXG4RUvNbK3nMMVj33-ldbM1Ub1osHEU/exec";
 
+const SECRET_KEY = "013187";
+
+const SEARCH_PREFIX = "SEARCH_USER_";
 
 
-const SECRET_KEY =
-  "013187";
-
-const SEARCH_PREFIX =
-  "SEARCH_USER_";
 
 function doPost(e) {
-
   try {
-
     const data = JSON.parse(e.postData.contents);
 
-    if (
-      !data ||
-      !data.message ||
-      !data.message.text
-    ) {
-
+    if (!data || !data.message || !data.message.text) {
       return HtmlService.createHtmlOutput("ok");
-
     }
 
-    const chatId =
-      data.message.chat.id;
+    const chatId = data.message.chat.id;
 
-    const text =
-      data.message.text
-        .toLowerCase()
-        .trim();
+    const text = data.message.text.toLowerCase().trim();
 
     if (text === "/today") {
-
+      sendMessage(chatId, "Query received. Bringing today's operational summary, Sir.");
       sendToday(chatId);
 
-    }
-
-    else if (text === "/employees") {
-
+    } else if (text === "/employees") {
+      sendMessage(chatId, "Query received. Retrieving employee performance data, Sir.");
       sendEmployees(chatId);
 
-    }
+    } else if (text === "/idle") {
+      sendMessage(chatId, "Query received. Checking inactive personnel, Sir.");
+      sendIdle(chatId);
 
-    else if (text === "/oils") {
+    } else if (text === "/attendance") {
+      sendMessage(chatId, "Query received. Compiling attendance records, Sir.");
+      sendAttendance(chatId);
 
+    } else if (text === "/oils") {
+      sendMessage(chatId, "Query received. Accessing oil service analytics, Sir.");
       sendOils(chatId);
 
-    }
-
-    else if (text === "/zeena") {
-
+    } else if (text === "/zeena") {
+      sendMessage(chatId, "Query received. Retrieving Zeena and wiper statistics, Sir.");
       sendZeena(chatId);
 
-    }
+    } else if (text === "/search") {
 
-    else if (text === "/search") {
-
-      PropertiesService
-        .getScriptProperties()
-        .setProperty(
-          SEARCH_PREFIX + chatId,
-          "waiting"
-        );
-
-      sendMessage(
-        chatId,
-        "Send vehicle plate number."
+      PropertiesService.getScriptProperties().setProperty(
+        SEARCH_PREFIX + chatId,
+        "waiting",
       );
 
-    }
+      sendMessage(chatId, "Send vehicle plate number.");
 
-    else if (text === "/companies") {
+    } else if (text === "/yesterday") {
+      sendMessage(chatId, "Query received. Accessing archived daily report, Sir.");
+      sendYesterday(chatId);
 
+    } else if (text === "/companies") {
+      sendMessage(chatId, "Query received. Gathering company account statistics, Sir.");
       sendCompanies(chatId);
 
-    }
-
-    else if (text === "/ping") {
-
+    } else if (text === "/ping") {
       sendMessage(chatId, "pong");
 
-    }
-
-    else if (
-
-      PropertiesService
-        .getScriptProperties()
-        .getProperty(
-          SEARCH_PREFIX + chatId
-        )
-
+    } else if (
+      PropertiesService.getScriptProperties().getProperty(
+        SEARCH_PREFIX + chatId,
+      )
     ) {
 
-      PropertiesService
-        .getScriptProperties()
-        .deleteProperty(
-          SEARCH_PREFIX + chatId
-        );
-
-      sendVehicleSearch(
-        chatId,
-        text
+      PropertiesService.getScriptProperties().deleteProperty(
+        SEARCH_PREFIX + chatId,
       );
 
-    }
+      sendMessage(chatId, "Plate received. Searching vehicle records, Sir.");
+      sendVehicleSearch(chatId, text);
 
-    else {
+    } else {
 
       sendMessage(
         chatId,
-`
-<b>COMMANDS</b>
-
-today
-employees
-companies
-search
-oils
-zeena
-ping
-`
+        "<b>AL RAKED COMMAND CENTRE [ARC]</b>\n\n" +
+          "Use the blue <b>Menu</b> button beside the chat box to access all available controls and analytics.\n\n" +
+          "<b>مركز تحكم الراكد [ARC]</b>\n\n" +
+          "استخدم زر <b>Menu</b> الأزرق بجانب المحادثة للوصول إلى جميع أدوات التحكم والإحصائيات.",
       );
-
     }
 
     return HtmlService.createHtmlOutput("ok");
 
-  }
-
-  catch(err) {
+  } catch (err) {
 
     Logger.log(err);
 
     return HtmlService.createHtmlOutput("error");
-
   }
-
 }
+
 
 function fetchData() {
+  const url = WEB_APP_URL + "?key=" + SECRET_KEY;
 
-  const url =
-    WEB_APP_URL +
-    "?key=" +
-    SECRET_KEY;
+  const response = UrlFetchApp.fetch(url);
 
-  const response =
-    UrlFetchApp.fetch(url);
-
-  return JSON.parse(
-    response.getContentText()
-  );
-
+  return JSON.parse(response.getContentText());
 }
-
 
 function fetchVehicleSearch(plate) {
-
   const url =
-    WEB_APP_URL +
-    "?key=" +
-    SECRET_KEY +
-    "&search=" +
-    encodeURIComponent(plate);
+    WEB_APP_URL + "?key=" + SECRET_KEY + "&search=" + encodeURIComponent(plate);
 
-  const response =
-    UrlFetchApp.fetch(url);
+  const response = UrlFetchApp.fetch(url);
 
-  return JSON.parse(
-    response.getContentText()
-  );
-
+  return JSON.parse(response.getContentText());
 }
 
-
-
 function sendToday(chatId) {
+  const data = fetchData();
 
-  const data =
-    fetchData();
+  const s = data.summary;
 
-  const s =
-    data.summary;
-
-  const msg =
-`
-<b>AL RAKED</b>
+  const msg = `
+<b>DAILY SUMMARY</b>
+    الملخص اليومي
 
 Today: AED ${s.today.earnings} • ${s.today.cars} cars
 Month: AED ${s.month.earnings} • ${s.month.cars} cars
@@ -202,79 +135,76 @@ Month: AED ${s.monthIncl.earnings} • ${s.monthIncl.cars} cars
 `;
 
   sendMessage(chatId, msg);
+}
 
+function sendYesterday(chatId) {
+  const cache = PropertiesService.getScriptProperties().getProperty(
+    "TELEGRAM_YESTERDAY_CACHE",
+  );
+
+  if (!cache) {
+    sendMessage(chatId, "No yesterday data available.");
+
+    return;
+  }
+
+  const data = JSON.parse(cache);
+
+  const s = data.summary;
+
+  const msg = `
+<b>YESTERDAY SUMMARY</b>
+
+Today:
+AED ${s.today.earnings}
+• ${s.today.cars} cars
+
+WITH COMPANY
+
+AED ${s.todayIncl.earnings}
+• ${s.todayIncl.cars} cars
+`;
+
+  sendMessage(chatId, msg);
 }
 
 function sendEmployees(chatId) {
+  const data = fetchData();
 
-  const data =
-    fetchData();
+  const employees = data.employees;
 
-  const employees =
-    data.employees;
+  const lastWork = data.lastWork;
 
-  const lastWork =
-    data.lastWork;
+  let msg = `<b>EMPLOYEES</b>\n\n`;
 
-  let msg =
-    `<b>EMPLOYEES</b>\n\n`;
-
-  const now =
-    new Date();
+  const now = new Date();
 
   Object.keys(employees)
 
-    .sort((a,b)=>
+    .sort((a, b) => employees[b].carsToday - employees[a].carsToday)
 
-      employees[b].carsToday -
-      employees[a].carsToday
+    .forEach((name) => {
+      const emp = employees[name];
 
-    )
-
-    .forEach(name => {
-
-      const emp =
-        employees[name];
-
-      let lastText =
-        "No work";
+      let lastText = "No work";
 
       if (lastWork[name]) {
+        const last = new Date(lastWork[name]);
 
-        const last =
-          new Date(lastWork[name]);
-
-        const diff =
-          Math.floor(
-            (now - last) / 60000
-          );
+        const diff = Math.floor((now - last) / 60000);
 
         if (diff >= 60) {
+          const h = Math.floor(diff / 60);
 
-          const h =
-            Math.floor(diff / 60);
+          const m = diff % 60;
 
-          const m =
-            diff % 60;
-
-          lastText =
-            m
-              ? `${h}h ${m}m ago`
-              : `${h}h ago`;
-
+          lastText = m ? `${h}h ${m}m ago` : `${h}h ago`;
+        } else {
+          lastText = `${diff}m ago`;
         }
-
-        else {
-
-          lastText =
-            `${diff}m ago`;
-
-        }
-
       }
 
-      msg +=
-`
+      msg += `
 <b>${name}</b>
 
 AED ${emp.daily.toFixed(0)} • ${emp.carsToday} cars today
@@ -283,83 +213,161 @@ AED ${emp.monthly.toFixed(0)} • ${emp.carsMonth} cars month
 ${lastText}
 
 `;
-
     });
 
   sendLongMessage(chatId, msg);
+}
 
+function sendIdle(chatId) {
+  const data = fetchData();
+
+  const lastWork = data.lastWork;
+
+  const now = new Date();
+
+  let msg = `<b>IDLE EMPLOYEES</b>\n\n`;
+
+  const idleList = [];
+
+  Object.keys(lastWork).forEach((name) => {
+    const last = new Date(lastWork[name]);
+
+    const diff = Math.floor((now - last) / 60000);
+
+    idleList.push({
+      name,
+      diff,
+    });
+  });
+
+  idleList.sort((a, b) => b.diff - a.diff);
+
+  idleList.forEach((emp) => {
+    const h = Math.floor(emp.diff / 60);
+
+    const m = emp.diff % 60;
+
+    msg += `${emp.name}
+${h}h ${m}m inactive
+
+`;
+  });
+
+  sendLongMessage(chatId, msg);
+}
+
+function sendAttendance(chatId) {
+  const data = fetchData();
+
+  const attendance = data.attendance || {};
+
+  const tz = Session.getScriptTimeZone();
+
+  const allEmployees = [
+    "SAMPATH",
+    "LAKSHMAN",
+    "IRAN",
+    "SUPUN",
+    "ROHAN",
+    "JEEVANTHA",
+    "ASHANGA",
+    "RAVINDU",
+    "BHARATHA",
+    "SAJID",
+    "UDAY",
+    "NILANGA",
+    "FAISAL",
+    "PRASAD",
+    "AJITH",
+    "PIYUSH",
+    "IRESHAN",
+    "SHANUKA",
+    "SHAHID",
+  ];
+
+  let msg = `<b>TODAY ATTENDANCE</b>\n\n`;
+
+  const present = Object.keys(attendance).sort(
+    (a, b) => new Date(attendance[a].first) - new Date(attendance[b].first),
+  );
+
+  present.forEach((name, index) => {
+    const firstTime = Utilities.formatDate(
+      new Date(attendance[name].first),
+      tz,
+      "HH:mm",
+    );
+
+    const lastTime = Utilities.formatDate(
+      new Date(attendance[name].last),
+      tz,
+      "HH:mm",
+    );
+
+    msg += `${index + 1}. ${name}
+
+First: ${firstTime}
+Last: ${lastTime}
+
+`;
+  });
+
+  const absentees = allEmployees.filter((name) => !attendance[name]);
+
+  msg += `\n<b>ABSENT</b>\n`;
+
+  msg += absentees.length ? absentees.join(", ") : "None";
+
+  sendLongMessage(chatId, msg);
 }
 
 function sendCompanies(chatId) {
+  const data = fetchData();
 
-  const data =
-    fetchData();
+  const companies = data.companies;
 
-  const companies =
-    data.companies;
-
-  let msg =
-    `<b>COMPANIES</b>\n\n`;
+  let msg = `<b>COMPANIES</b>\n\n`;
 
   Object.keys(companies)
 
-    .sort((a, b) =>
-      companies[b].dailyAmt -
-      companies[a].dailyAmt
-    )
+    .sort((a, b) => companies[b].dailyAmt - companies[a].dailyAmt)
 
-    .forEach(name => {
+    .forEach((name) => {
+      const c = companies[name];
 
-      const c =
-        companies[name];
-
-      msg +=
-`
+      msg += `
 <b>${name}</b>
 
 AED ${c.dailyAmt.toFixed(0)} • ${c.dailyCars} cars today
 AED ${c.monthlyAmt.toFixed(0)} • ${c.monthlyCars} cars month
 
 `;
-
     });
 
   sendLongMessage(chatId, msg);
-
 }
 
-
-
 function sendVehicleSearch(chatId, plate) {
-
-  const results =
-    fetchVehicleSearch(plate);
+  const results = fetchVehicleSearch(plate);
 
   if (!results.length) {
-
-    sendMessage(
-      chatId,
-      `No entries found for ${plate}`
-    );
+    sendMessage(chatId, `No entries found for ${plate}`);
 
     return;
-
   }
 
-  let msg =
-    `<b>SEARCH: ${plate}</b>\n\n`;
+  const occurrences = results.length;
+
+  let msg = `<b>SEARCH: ${plate}</b>\n\n` + `Occurrences: ${occurrences}\n\n`;
 
   results.forEach((r, index) => {
+    const date = Utilities.formatDate(
+      new Date(r.timestamp),
+      Session.getScriptTimeZone(),
+      "dd MMM yyyy • HH:mm",
+    );
 
-    const date =
-      Utilities.formatDate(
-        new Date(r.timestamp),
-        Session.getScriptTimeZone(),
-        "dd MMM yyyy • HH:mm"
-      );
-
-    msg +=
-`
+    msg += `
 <b>${index + 1}.</b>
 
 🚘 ${r.plate}
@@ -377,122 +385,81 @@ function sendVehicleSearch(chatId, plate) {
 📂 ${r.sheet}
 
 `;
-
   });
 
   sendLongMessage(chatId, msg);
-
 }
 
-
-
 function sendOils(chatId) {
+  const data = fetchData();
 
-  const data =
-    fetchData();
+  const oils = data.oils;
 
-  const oils =
-    data.oils;
-
-  let msg =
-    `<b>OILS</b>\n\n`;
+  let msg = `<b>OILS</b>\n\n`;
 
   Object.keys(oils)
 
-    .forEach(name => {
+    .forEach((name) => {
+      const o = oils[name];
 
-      const o =
-        oils[name];
-
-      msg +=
-`
+      msg += `
 <b>${name}</b>
 
 AED ${o.dailyAmt} • ${o.dailyCars} cars today
 AED ${o.monthlyAmt} • ${o.monthlyCars} cars month
 
 `;
-
     });
 
   sendLongMessage(chatId, msg);
-
 }
 
 function sendZeena(chatId) {
+  const data = fetchData();
 
-  const data =
-    fetchData();
+  const zeena = data.zeena;
 
-  const zeena =
-    data.zeena;
-
-  let msg =
-    `<b>ZEENA / WIPERS</b>\n\n`;
+  let msg = `<b>ZEENA / WIPERS</b>\n\n`;
 
   Object.keys(zeena)
 
-    .forEach(name => {
+    .forEach((name) => {
+      const z = zeena[name];
 
-      const z =
-        zeena[name];
-
-      msg +=
-`
+      msg += `
 <b>${name}</b>
 
 AED ${z.dailyAmt} • ${z.dailyCars} cars today
 AED ${z.monthlyAmt} • ${z.monthlyCars} cars month
 
 `;
-
     });
 
   sendLongMessage(chatId, msg);
-
 }
 
 function sendMessage(chatId, text) {
-
-  const url =
-    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
   UrlFetchApp.fetch(url, {
-
     method: "post",
 
-    contentType:
-      "application/json",
+    contentType: "application/json",
 
     payload: JSON.stringify({
-
       chat_id: chatId,
 
       text: text,
 
-      parse_mode: "HTML"
-
-    })
-
+      parse_mode: "HTML",
+    }),
   });
-
 }
 
 function sendLongMessage(chatId, text) {
-
   const limit = 3500;
 
-  for (
-    let i = 0;
-    i < text.length;
-    i += limit
-  ) {
-
-    sendMessage(
-      chatId,
-      text.substring(i, i + limit)
-    );
-
+  for (let i = 0; i < text.length; i += limit) {
+    sendMessage(chatId, text.substring(i, i + limit));
   }
-
 }
