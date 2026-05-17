@@ -198,6 +198,7 @@ function getReportData() {
   }
 
   const attendance = {};
+  const activeEmployees = {};
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -211,13 +212,13 @@ function getReportData() {
       Session.getScriptTimeZone(),
       "yyyy-MM-dd",
     );
-    
+
     const currentDate = Utilities.formatDate(
       new Date(),
       Session.getScriptTimeZone(),
       "yyyy-MM-dd",
     );
-    
+
     if (rowDate !== currentDate) continue;
 
     const employees = (row[2] || "")
@@ -227,6 +228,8 @@ function getReportData() {
       .filter(Boolean);
 
     employees.forEach((name) => {
+      activeEmployees[name] = true;
+
       if (!attendance[name]) {
         attendance[name] = {
           first: timestamp,
@@ -275,6 +278,7 @@ function getReportData() {
     oils: oilMap,
     zeena: zeenahMap,
     attendance: attendance,
+    activeEmployees: Object.keys(activeEmployees),
   };
 }
 function updateTelegramCache() {
@@ -287,12 +291,24 @@ function updateTelegramCache() {
 }
 
 function saveYesterdaySnapshot() {
-  const data = getReportData();
+  try {
+    const cache = PropertiesService.getScriptProperties().getProperty(
+      "TELEGRAM_REPORT_CACHE",
+    );
 
-  PropertiesService.getScriptProperties().setProperty(
-    "TELEGRAM_YESTERDAY_CACHE",
-    JSON.stringify(data),
-  );
+    if (!cache) {
+      throw new Error("No TELEGRAM_REPORT_CACHE found.");
+    }
+
+    PropertiesService.getScriptProperties().setProperty(
+      "TELEGRAM_YESTERDAY_CACHE",
+      cache,
+    );
+
+    Logger.log("Yesterday snapshot saved successfully.");
+  } catch (err) {
+    Logger.log("saveYesterdaySnapshot failed: " + err);
+  }
 }
 
 function sendTelegramEntry(rowData) {
@@ -409,11 +425,41 @@ function doGet(e) {
   const key = e.parameter.key;
 
   const search = e.parameter.search;
+  const yesterday = e.parameter.yesterday;
+
+  const employeeList = e.parameter.employeeList;
+  const employeeMonths = e.parameter.employeeMonths;
+  const employeePerformance = e.parameter.employeePerformance;
+  const month = e.parameter.month;
 
   if (key !== "013187") {
     return ContentService.createTextOutput("Unauthorized").setMimeType(
       ContentService.MimeType.TEXT,
     );
+  }
+
+  if (yesterday) {
+    return ContentService.createTextOutput(getYesterdaySnapshot()).setMimeType(
+      ContentService.MimeType.JSON,
+    );
+  }
+
+  if (employeeList) {
+    return ContentService.createTextOutput(
+      JSON.stringify(getAllEmployeesList()),
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (employeeMonths) {
+    return ContentService.createTextOutput(
+      JSON.stringify(getEmployeeMonths(employeeMonths)),
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (employeePerformance && month) {
+    return ContentService.createTextOutput(
+      JSON.stringify(getEmployeeMonthlyPerformance(employeePerformance, month)),
+    ).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (search) {
@@ -431,6 +477,14 @@ function doGet(e) {
   return ContentService.createTextOutput(cache || "{}").setMimeType(
     ContentService.MimeType.JSON,
   );
+}
+
+function getYesterdaySnapshot() {
+  const cache = PropertiesService.getScriptProperties().getProperty(
+    "TELEGRAM_YESTERDAY_CACHE",
+  );
+
+  return cache || "{}";
 }
 
 function calc() {
@@ -1314,113 +1368,125 @@ function onOpen() {
 }
 
 function emailPerformanceReport() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("Form Responses 1");
-  const auditSheet = ss.getSheetByName("PriceAudit");
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Form Responses 1");
+    const auditSheet = ss.getSheetByName("PriceAudit");
 
-  // Generate latest performance report
-  calc();
+    calc();
 
-  const today = new Date();
-  const timeZone = Session.getScriptTimeZone();
+    SpreadsheetApp.flush();
 
-  const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy");
-  const fileDate = Utilities.formatDate(today, timeZone, "MMMM d yyyy").replace(
-    / /g,
-    "_",
-  );
+    const today = new Date();
+    const timeZone = Session.getScriptTimeZone();
 
-  // MAIN REPORT PDF
-  const url =
-    `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
-    `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
-    `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
+    const subjectDate = Utilities.formatDate(today, timeZone, "MMMM d, yyyy");
 
-  const options = {
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-  };
+    const fileDate = Utilities.formatDate(
+      today,
+      timeZone,
+      "MMMM d yyyy",
+    ).replace(/ /g, "_");
 
-  const mainPdf = UrlFetchApp.fetch(url, options)
-    .getBlob()
-    .setName(`${fileDate}_Al_Raked_Performance_Report.pdf`);
+    const exportUrl =
+      `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+      `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+      `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
 
-  // ---------- PRICE AUDIT PROCESS ----------
+    const options = {
+      headers: {
+        Authorization: "Bearer " + ScriptApp.getOAuthToken(),
+      },
+      muteHttpExceptions: true,
+    };
 
-  const auditData = auditSheet.getDataRange().getValues();
-  const header = auditData[0];
+    const mainResponse = UrlFetchApp.fetch(exportUrl, options);
 
-  let rowsToday = [];
-
-  for (let i = 1; i < auditData.length; i++) {
-    const changeTime = new Date(auditData[i][0]);
-
-    if (changeTime.toDateString() === today.toDateString()) {
-      rowsToday.push(auditData[i]);
+    if (mainResponse.getResponseCode() !== 200) {
+      throw new Error("Main PDF export failed.");
     }
-  }
 
-  let attachments = [mainPdf];
-  let auditText = "No price changes recorded today.";
+    const mainPdf = mainResponse
+      .getBlob()
+      .setName(`${fileDate}_Al_Raked_Performance_Report.pdf`);
 
-  if (rowsToday.length > 0) {
-    const tempName = "TEMP_AUDIT_EXPORT";
+    let attachments = [mainPdf];
 
-    let temp = ss.getSheetByName(tempName);
+    const auditData = auditSheet.getDataRange().getValues();
 
-    if (temp) ss.deleteSheet(temp);
-
-    temp = ss.insertSheet(tempName);
-
-    const headerRange = auditSheet.getRange(1, 1, 1, 10);
-    headerRange.copyTo(temp.getRange(1, 1), { contentsOnly: false });
-
-    let writeRow = 2;
+    const rowsToday = [];
 
     for (let i = 1; i < auditData.length; i++) {
       const changeTime = new Date(auditData[i][0]);
 
       if (changeTime.toDateString() === today.toDateString()) {
-        auditSheet
-          .getRange(i + 1, 1, 1, 10)
-          .copyTo(temp.getRange(writeRow, 1), { contentsOnly: false });
-
-        writeRow++;
+        rowsToday.push(auditData[i].slice(0, 10));
       }
     }
 
-    SpreadsheetApp.flush();
+    let auditText = "No price changes recorded today.";
 
-    const auditUrl =
-      `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
-      `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
-      `&pagenumbers=false&gridlines=true&fzr=false&gid=${temp.getSheetId()}`;
+    if (rowsToday.length > 0) {
+      const tempName = "TEMP_AUDIT_EXPORT";
 
-    const auditPdf = UrlFetchApp.fetch(auditUrl, options)
-      .getBlob()
-      .setName(`${fileDate}_Price_Audit.pdf`);
+      const existing = ss.getSheetByName(tempName);
 
-    attachments.push(auditPdf);
+      if (existing) {
+        ss.deleteSheet(existing);
+      }
+      const temp = ss.insertSheet(tempName);
 
-    auditText = `${rowsToday.length} price change(s) recorded today. See attached audit report.`;
+      try {
+        auditSheet.getRange(1, 1, 1, 10).copyTo(temp.getRange(1, 1));
 
-    ss.deleteSheet(temp);
+        temp.getRange(1, 1, 1, 10).setFontColor("white");
+
+        temp.getRange(2, 1, rowsToday.length, 10).setValues(rowsToday);
+        temp.getRange(2, 1, rowsToday.length, 10).setFontColor("black");
+
+        SpreadsheetApp.flush();
+
+        const auditUrl =
+          `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+          `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+          `&pagenumbers=false&gridlines=true&fzr=false&gid=${temp.getSheetId()}`;
+
+        const auditResponse = UrlFetchApp.fetch(auditUrl, options);
+
+        if (auditResponse.getResponseCode() === 200) {
+          const auditPdf = auditResponse
+            .getBlob()
+            .setName(`${fileDate}_Price_Audit.pdf`);
+
+          attachments.push(auditPdf);
+
+          auditText = `${rowsToday.length} price change(s) recorded today.`;
+        }
+      } finally {
+        ss.deleteSheet(temp);
+      }
+    }
+
+    MailApp.sendEmail({
+      to: "alrakedcarwashingstation@gmail.com,Humaid.almessabi@gmail.com",
+
+      subject: `${subjectDate} - Al Raked Performance Report`,
+
+      body: "Daily operational report attached.\n\n" + auditText,
+
+      attachments: attachments,
+    });
+
+    Logger.log("Performance email sent successfully.");
+  } catch (err) {
+    Logger.log("emailPerformanceReport failed: " + err);
+
+    MailApp.sendEmail({
+      to: "imhaninmohd@gmail.com",
+      subject: "Performance Report FAILED",
+      body: String(err),
+    });
   }
-
-  // SEND EMAIL
-  MailApp.sendEmail({
-    to: "alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
-    subject: `${subjectDate} - Al Raked Performance Report`,
-    body:
-      "Sir,\n\n" +
-      "The system has completed today's performance analysis.\n\n" +
-      "Summary:\n" +
-      auditText +
-      "\n\n" +
-      "All operational metrics have been compiled and verified.\n" +
-      "Detailed reports are attached for your review.\n\n" +
-      "Awaiting further instructions.",
-    attachments: attachments,
-  });
 }
 
 function emailMonthlyReport() {
@@ -1795,7 +1861,6 @@ function createTriggers() {
 function onFormSubmit(e) {
   processFormSubmission();
 
-
   calc();
 
   const rowData = e.values;
@@ -1883,6 +1948,259 @@ function duplicateSheetAtMonthEnd() {
   }
 }
 
+// ================================
+// EMPLOYEE PERFORMANCE API
+// ================================
+
+function getAllEmployeesList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheets = ss.getSheets();
+
+  const employees = {};
+
+  sheets.forEach((sheet) => {
+    const sheetName = sheet.getName();
+
+    // Skip utility sheets
+    if (sheetName === "PriceAudit" || sheetName.startsWith("TEMP")) {
+      return;
+    }
+
+    const data = sheet.getDataRange().getValues();
+
+    if (data.length < 2) return;
+
+    const headers = data[0].map((h) => h.toString().trim().toLowerCase());
+
+    // Find employee column dynamically
+    const employeeCol = headers.findIndex((h) => h.includes("employee"));
+
+    if (employeeCol === -1) return;
+
+    for (let i = 1; i < data.length; i++) {
+      const employeeCell = data[i][employeeCol];
+
+      if (!employeeCell) continue;
+
+      const names = employeeCell
+        .toString()
+        .split(/,|\s+/)
+        .map((e) => e.trim().toUpperCase())
+        .filter(Boolean);
+
+      names.forEach((name) => {
+        employees[name] = true;
+      });
+    }
+  });
+
+  return Object.keys(employees).sort();
+}
+
+function getEmployeeMonths(employeeName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheets = ss.getSheets();
+
+  const months = {};
+
+  sheets.forEach((sheet) => {
+    const sheetName = sheet.getName();
+
+    if (sheetName === "PriceAudit" || sheetName.startsWith("TEMP")) {
+      return;
+    }
+
+    const data = sheet.getDataRange().getValues();
+
+    if (data.length < 2) return;
+
+    const headers = data[0].map((h) => h.toString().trim().toLowerCase());
+
+    const employeeCol = headers.findIndex((h) => h.includes("employee"));
+
+    if (employeeCol === -1) return;
+
+    for (let i = 1; i < data.length; i++) {
+      const timestamp = data[i][0];
+
+      const employeeCell = data[i][employeeCol];
+
+      if (!timestamp || !employeeCell) continue;
+
+      const names = employeeCell
+        .toString()
+        .split(/,|\s+/)
+        .map((e) => e.trim().toUpperCase());
+
+      if (!names.includes(employeeName.toUpperCase())) continue;
+
+      const date = new Date(timestamp);
+
+      const key = Utilities.formatDate(
+        date,
+        Session.getScriptTimeZone(),
+        "yyyy-MM",
+      );
+
+      const label = Utilities.formatDate(
+        date,
+        Session.getScriptTimeZone(),
+        "MMMM yyyy",
+      );
+
+      months[key] = label;
+    }
+  });
+
+  return months;
+}
+
+function getEmployeeMonthlyPerformance(employeeName, monthKey) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const sheets = ss.getSheets();
+
+  let totalCars = 0;
+  let totalEarnings = 0;
+
+  let firstDate = null;
+  let lastDate = null;
+
+  const workedDays = {};
+
+  sheets.forEach((sheet) => {
+    const sheetName = sheet.getName();
+
+    if (sheetName === "PriceAudit" || sheetName.startsWith("TEMP")) {
+      return;
+    }
+
+    const data = sheet.getDataRange().getValues();
+
+    if (data.length < 2) return;
+
+    const headers = data[0].map((h) => h.toString().trim().toLowerCase());
+
+    const employeeCol = headers.findIndex((h) => h.includes("employee"));
+
+    const priceCol = headers.findIndex(
+      (h) => h.includes("service fee") || h.includes("price"),
+    );
+
+    if (employeeCol === -1) return;
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+
+      const timestamp = row[0];
+
+      const employeeCell = row[employeeCol];
+
+      if (!timestamp || !employeeCell) continue;
+
+      const names = employeeCell
+        .toString()
+        .split(/,|\s+/)
+        .map((e) => e.trim().toUpperCase());
+
+      if (!names.includes(employeeName.toUpperCase())) continue;
+
+      const date = new Date(timestamp);
+
+      const rowMonth = Utilities.formatDate(
+        date,
+        Session.getScriptTimeZone(),
+        "yyyy-MM",
+      );
+
+      if (rowMonth !== monthKey) continue;
+
+      // Match main report logic exactly
+
+      const serviceFeeRaw = row[5] !== undefined ? row[5] : 0;
+
+      const specialPriceRaw = row[9] !== undefined ? row[9] : "";
+
+      let serviceAmt = 0;
+
+      if (
+        serviceFeeRaw &&
+        serviceFeeRaw.toString().trim().toLowerCase() !== "free"
+      ) {
+        serviceAmt = parseFloat(serviceFeeRaw) || 0;
+      }
+
+      let actualAmt = 0;
+
+      if (
+        specialPriceRaw !== "" &&
+        specialPriceRaw !== null &&
+        specialPriceRaw !== undefined
+      ) {
+        actualAmt = parseFloat(specialPriceRaw) || 0;
+      } else {
+        actualAmt = serviceAmt;
+      }
+
+      // Split between employees
+      const splitAmt = actualAmt / names.length;
+
+      totalCars++;
+      totalEarnings += splitAmt;
+
+      const dayKey = Utilities.formatDate(
+        date,
+        Session.getScriptTimeZone(),
+        "yyyy-MM-dd",
+      );
+
+      workedDays[dayKey] = true;
+
+      if (!firstDate || date < firstDate) {
+        firstDate = date;
+      }
+
+      if (!lastDate || date > lastDate) {
+        lastDate = date;
+      }
+    }
+  });
+
+  const daysWorked = Object.keys(workedDays).length;
+
+  return {
+    employee: employeeName,
+    month: monthKey,
+
+    totalCars: totalCars,
+
+    totalEarnings: totalEarnings,
+
+    daysWorked: daysWorked,
+
+    averageCarsPerDay: daysWorked > 0 ? totalCars / daysWorked : 0,
+
+    averageEarningsPerDay: daysWorked > 0 ? totalEarnings / daysWorked : 0,
+
+    firstWork: firstDate
+      ? Utilities.formatDate(
+          firstDate,
+          Session.getScriptTimeZone(),
+          "dd MMM yyyy",
+        )
+      : null,
+
+    lastWork: lastDate
+      ? Utilities.formatDate(
+          lastDate,
+          Session.getScriptTimeZone(),
+          "dd MMM yyyy",
+        )
+      : null,
+  };
+}
 function createMonthEndTrigger() {
   // Remove existing trigger if present
   const triggers = ScriptApp.getProjectTriggers();
