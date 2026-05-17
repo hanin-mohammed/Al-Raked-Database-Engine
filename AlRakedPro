@@ -6,11 +6,15 @@ const SECRET_KEY = "013187";
 
 const SEARCH_PREFIX = "SEARCH_USER_";
 
-
-
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
+
+    if (data.callback_query) {
+      handleCallbackQuery(data.callback_query);
+
+      return HtmlService.createHtmlOutput("ok");
+    }
 
     if (!data || !data.message || !data.message.text) {
       return HtmlService.createHtmlOutput("ok");
@@ -21,64 +25,72 @@ function doPost(e) {
     const text = data.message.text.toLowerCase().trim();
 
     if (text === "/today") {
-      sendMessage(chatId, "Query received. Bringing today's operational summary, Sir.");
+      sendMessage(
+        chatId,
+        "Query received. Bringing today's operational summary, Sir.",
+      );
       sendToday(chatId);
-
     } else if (text === "/employees") {
-      sendMessage(chatId, "Query received. Retrieving employee performance data, Sir.");
+      sendMessage(
+        chatId,
+        "Query received. Retrieving employee performance data, Sir.",
+      );
       sendEmployees(chatId);
-
     } else if (text === "/idle") {
       sendMessage(chatId, "Query received. Checking inactive personnel, Sir.");
       sendIdle(chatId);
-
     } else if (text === "/attendance") {
       sendMessage(chatId, "Query received. Compiling attendance records, Sir.");
       sendAttendance(chatId);
-
     } else if (text === "/oils") {
-      sendMessage(chatId, "Query received. Accessing oil service analytics, Sir.");
+      sendMessage(
+        chatId,
+        "Query received. Accessing oil service analytics, Sir.",
+      );
       sendOils(chatId);
-
     } else if (text === "/zeena") {
-      sendMessage(chatId, "Query received. Retrieving Zeena and wiper statistics, Sir.");
+      sendMessage(
+        chatId,
+        "Query received. Retrieving Zeena and wiper statistics, Sir.",
+      );
       sendZeena(chatId);
-
     } else if (text === "/search") {
-
       PropertiesService.getScriptProperties().setProperty(
         SEARCH_PREFIX + chatId,
         "waiting",
       );
 
       sendMessage(chatId, "Send vehicle plate number.");
-
     } else if (text === "/yesterday") {
-      sendMessage(chatId, "Query received. Accessing archived daily report, Sir.");
+      sendMessage(
+        chatId,
+        "Query received. Accessing archived daily report, Sir.",
+      );
       sendYesterday(chatId);
+    } else if (text === "/retrieveemployee") {
+      sendMessage(chatId, "Retrieving employee database, Sir.");
 
+      sendEmployeeList(chatId);
     } else if (text === "/companies") {
-      sendMessage(chatId, "Query received. Gathering company account statistics, Sir.");
+      sendMessage(
+        chatId,
+        "Query received. Gathering company account statistics, Sir.",
+      );
       sendCompanies(chatId);
-
     } else if (text === "/ping") {
       sendMessage(chatId, "pong");
-
     } else if (
       PropertiesService.getScriptProperties().getProperty(
         SEARCH_PREFIX + chatId,
       )
     ) {
-
       PropertiesService.getScriptProperties().deleteProperty(
         SEARCH_PREFIX + chatId,
       );
 
       sendMessage(chatId, "Plate received. Searching vehicle records, Sir.");
       sendVehicleSearch(chatId, text);
-
     } else {
-
       sendMessage(
         chatId,
         "<b>AL RAKED COMMAND CENTRE [ARC]</b>\n\n" +
@@ -89,18 +101,70 @@ function doPost(e) {
     }
 
     return HtmlService.createHtmlOutput("ok");
-
   } catch (err) {
-
     Logger.log(err);
 
     return HtmlService.createHtmlOutput("error");
   }
 }
 
+function handleCallbackQuery(callbackQuery) {
+  const data = callbackQuery.data;
+
+  const chatId = callbackQuery.message.chat.id;
+
+  const parts = data.split("|");
+
+  const type = parts[0];
+
+  if (type === "EMP") {
+    const employee = parts[1];
+
+    sendMessage(chatId, `Retrieving available records for ${employee}, Sir.`);
+
+    sendEmployeeMonths(chatId, employee);
+  }
+
+  if (type === "MONTH") {
+    const employee = parts[1];
+
+    const month = parts[2];
+
+    sendMessage(
+      chatId,
+      `Compiling ${employee}'s performance analytics for ${month}, Sir. Please wait.`,
+    );
+
+    sendEmployeePerformance(chatId, employee, month);
+  }
+
+  answerCallbackQuery(callbackQuery.id);
+}
+
+function answerCallbackQuery(callbackId) {
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`;
+
+  UrlFetchApp.fetch(url, {
+    method: "post",
+
+    contentType: "application/json",
+
+    payload: JSON.stringify({
+      callback_query_id: callbackId,
+    }),
+  });
+}
 
 function fetchData() {
   const url = WEB_APP_URL + "?key=" + SECRET_KEY;
+
+  const response = UrlFetchApp.fetch(url);
+
+  return JSON.parse(response.getContentText());
+}
+
+function fetchYesterdayData() {
+  const url = WEB_APP_URL + "?key=" + SECRET_KEY + "&yesterday=1";
 
   const response = UrlFetchApp.fetch(url);
 
@@ -163,6 +227,33 @@ WITH COMPANY
 
 AED ${s.todayIncl.earnings}
 • ${s.todayIncl.cars} cars
+`;
+
+  sendMessage(chatId, msg);
+}
+
+function sendYesterday(chatId) {
+  const data = fetchYesterdayData();
+
+  if (!data || !data.summary) {
+    sendMessage(chatId, "No yesterday data available.");
+
+    return;
+  }
+
+  const s = data.summary;
+
+  const msg = `
+<b>YESTERDAY SUMMARY</b>
+    ملخص الأمس
+
+Today: AED ${s.today.earnings} • ${s.today.cars} cars
+Month: AED ${s.month.earnings} • ${s.month.cars} cars
+
+With Company
+
+Today: AED ${s.todayIncl.earnings} • ${s.todayIncl.cars} cars
+Month: AED ${s.monthIncl.earnings} • ${s.monthIncl.cars} cars
 `;
 
   sendMessage(chatId, msg);
@@ -263,27 +354,7 @@ function sendAttendance(chatId) {
 
   const tz = Session.getScriptTimeZone();
 
-  const allEmployees = [
-    "SAMPATH",
-    "LAKSHMAN",
-    "IRAN",
-    "SUPUN",
-    "ROHAN",
-    "JEEVANTHA",
-    "ASHANGA",
-    "RAVINDU",
-    "BHARATHA",
-    "SAJID",
-    "UDAY",
-    "NILANGA",
-    "FAISAL",
-    "PRASAD",
-    "AJITH",
-    "PIYUSH",
-    "IRESHAN",
-    "SHANUKA",
-    "SHAHID",
-  ];
+  const allEmployees = data.activeEmployees || [];
 
   let msg = `<b>TODAY ATTENDANCE</b>\n\n`;
 
@@ -436,6 +507,129 @@ AED ${z.monthlyAmt} • ${z.monthlyCars} cars month
     });
 
   sendLongMessage(chatId, msg);
+}
+
+// ================================
+// EMPLOYEE RETRIEVAL SYSTEM
+// ================================
+
+function fetchEmployeeList() {
+  const url = WEB_APP_URL + "?key=" + SECRET_KEY + "&employeeList=1";
+
+  return JSON.parse(UrlFetchApp.fetch(url).getContentText());
+}
+
+function fetchEmployeeMonths(employee) {
+  const url =
+    WEB_APP_URL +
+    "?key=" +
+    SECRET_KEY +
+    "&employeeMonths=" +
+    encodeURIComponent(employee);
+
+  return JSON.parse(UrlFetchApp.fetch(url).getContentText());
+}
+
+function fetchEmployeePerformance(employee, month) {
+  const url =
+    WEB_APP_URL +
+    "?key=" +
+    SECRET_KEY +
+    "&employeePerformance=" +
+    encodeURIComponent(employee) +
+    "&month=" +
+    encodeURIComponent(month);
+
+  return JSON.parse(UrlFetchApp.fetch(url).getContentText());
+}
+
+function sendEmployeeList(chatId) {
+  const employees = fetchEmployeeList();
+
+  const keyboard = [];
+
+  employees.forEach((name) => {
+    keyboard.push([
+      {
+        text: name,
+        callback_data: "EMP|" + name,
+      },
+    ]);
+  });
+
+  sendInlineKeyboard(chatId, "Select employee:", keyboard);
+}
+
+function sendEmployeeMonths(chatId, employee) {
+  const months = fetchEmployeeMonths(employee);
+
+  const keyboard = [];
+
+  Object.keys(months)
+    .sort()
+    .reverse()
+    .forEach((key) => {
+      keyboard.push([
+        {
+          text: months[key],
+          callback_data: "MONTH|" + employee + "|" + key,
+        },
+      ]);
+    });
+
+  sendInlineKeyboard(chatId, `${employee}\n\nSelect month:`, keyboard);
+}
+
+function sendEmployeePerformance(chatId, employee, month) {
+  const data = fetchEmployeePerformance(employee, month);
+
+  const msg = `
+<b>${employee}</b>
+
+📅 ${month}
+
+🚘 Cars Washed:
+${data.totalCars}
+
+💵 Earnings:
+AED ${data.totalEarnings.toFixed(0)}
+
+📆 Days Worked:
+${data.daysWorked}
+
+📈 Avg Cars / Day:
+${data.averageCarsPerDay.toFixed(1)}
+
+📊 Avg Earnings / Day:
+AED ${data.averageEarningsPerDay.toFixed(0)}
+
+🟢 First Work:
+${data.firstWork || "-"}
+
+🔴 Last Work:
+${data.lastWork || "-"}
+`;
+
+  sendMessage(chatId, msg);
+}
+
+function sendInlineKeyboard(chatId, text, keyboard) {
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  UrlFetchApp.fetch(url, {
+    method: "post",
+
+    contentType: "application/json",
+
+    payload: JSON.stringify({
+      chat_id: chatId,
+      text: text,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: keyboard,
+      },
+    }),
+  });
 }
 
 function sendMessage(chatId, text) {
