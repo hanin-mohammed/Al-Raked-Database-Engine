@@ -77,6 +77,13 @@ function doPost(e) {
         "Query received. Gathering company account statistics, Sir.",
       );
       sendCompanies(chatId);
+    } else if (text === "/services") {
+      sendMessage(
+        chatId,
+        "Query received. Compiling service usage analytics, Sir.",
+      );
+
+      sendServices(chatId);
     } else if (text === "/ping") {
       sendMessage(chatId, "pong");
     } else if (
@@ -353,8 +360,7 @@ function sendAttendance(chatId) {
   const attendance = data.attendance || {};
 
   const tz = Session.getScriptTimeZone();
-
-  const allEmployees = data.activeEmployees || [];
+  const allEmployees = data.allEmployees || [];
 
   let msg = `<b>TODAY ATTENDANCE</b>\n\n`;
 
@@ -418,6 +424,62 @@ AED ${c.monthlyAmt.toFixed(0)} • ${c.monthlyCars} cars month
   sendLongMessage(chatId, msg);
 }
 
+function sendServices(chatId) {
+  const data = fetchData();
+
+  const services = data.services || {};
+
+  if (!Object.keys(services).length) {
+    sendMessage(chatId, "No service data available.");
+    return;
+  }
+
+  let msg = `<b>SERVICE USAGE</b>\n\n`;
+
+  const sorted = Object.keys(services)
+
+    .sort((a, b) => {
+      if (a === "Hot Water") return -1;
+
+      if (b === "Hot Water") return 1;
+
+      return services[b].monthIncl.cars - services[a].monthIncl.cars;
+    });
+
+  sorted.forEach((name) => {
+    const d = services[name].today;
+    const di = services[name].todayIncl;
+
+    const m = services[name].month;
+    const mi = services[name].monthIncl;
+
+    if (mi.cars === 0) return;
+
+    const tdAmt = di.earnings - d.earnings;
+
+    const tdCars = di.cars - d.cars;
+
+    const moAmt = mi.earnings - m.earnings;
+
+    const moCars = mi.cars - m.cars;
+
+    const title = name === "Hot Water" ? `🔥 <b>${name}</b>` : `<b>${name}</b>`;
+
+    msg += `${title}
+
+Today
+AED ${d.earnings.toFixed(0)} • ${d.cars} cars
+Company: AED ${tdAmt.toFixed(0)} • ${tdCars} cars
+
+Month
+AED ${m.earnings.toFixed(0)} • ${m.cars} cars
+Company: AED ${moAmt.toFixed(0)} • ${moCars} cars
+
+`;
+  });
+
+  sendLongMessage(chatId, msg);
+}
 function sendVehicleSearch(chatId, plate) {
   const results = fetchVehicleSearch(plate);
 
@@ -651,9 +713,23 @@ function sendMessage(chatId, text) {
 }
 
 function sendLongMessage(chatId, text) {
-  const limit = 3500;
+  const limit = 3200;
 
-  for (let i = 0; i < text.length; i += limit) {
-    sendMessage(chatId, text.substring(i, i + limit));
+  while (text.length > limit) {
+    let split = text.lastIndexOf("\n\n", limit);
+
+    if (split < 0) {
+      split = limit;
+    }
+
+    const chunk = text.substring(0, split);
+
+    sendMessage(chatId, chunk);
+
+    text = text.substring(split).trim();
+  }
+
+  if (text.length) {
+    sendMessage(chatId, text);
   }
 }
