@@ -5,6 +5,22 @@ const TELEGRAM_CHANNEL_ID = "-1003868639331";
 // Temporary master switch. Set to true when Telegram should resume.
 const TELEGRAM_ENABLED = false;
 
+// REPORT TYPOGRAPHY: edit only these values to restyle every report/export.
+const REPORT_FONT_FAMILY = "IBM Plex Sans";
+const REPORT_FONT_SIZE = Object.freeze({
+  TITLE: 18,
+  TIMESTAMP: 10,
+  SUMMARY_TITLE: 17,
+  SUMMARY_LABEL: 14,
+  SUMMARY_VALUE: 16,
+  SECTION_TITLE: 16,
+  TABLE_HEADER: 10,
+  TABLE_BODY: 12,
+  HIGHLIGHT: 10,
+});
+const REPORT_MINIMUM_ROWS = 400;
+const REPORT_ROW_BUFFER = 300;
+
 function getAllEmployeeNamesFromSheet(data) {
   const employeeSet = new Set();
 
@@ -722,6 +738,31 @@ function buildOilDetailRows(oilMap, formatMoney) {
     ]);
 }
 
+function normalizeCompanyName(value) {
+  return (value || "")
+    .toString()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getCompanyGroupKey(value) {
+  return normalizeCompanyName(value).toLocaleUpperCase();
+}
+
+function getLastReportRow(sheet) {
+  const values = sheet
+    .getRange(1, 13, sheet.getMaxRows(), 1)
+    .getDisplayValues();
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i][0] !== "") return i + 1;
+  }
+
+  return 1;
+}
+
 function calc() {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -736,6 +777,7 @@ function calc() {
   const empLastWorkToday = {};
   const foremanMap = {};
   const companyMap = {};
+  const companyDisplayNames = {};
   const oilMap = {};
 
   let totalTodayIncl = 0,
@@ -778,19 +820,23 @@ function calc() {
       actualAmt = serviceAmt; // fallback to service fee if no special price
     }
 
-    const companyName = (company || "").toString().trim();
+    const companyName = normalizeCompanyName(company);
+    const companyKey = getCompanyGroupKey(companyName);
 
-    if (companyName) {
-      if (!companyJobs[companyName]) companyJobs[companyName] = [];
+    if (companyKey) {
+      if (!companyDisplayNames[companyKey]) {
+        companyDisplayNames[companyKey] = companyName;
+      }
+      if (!companyJobs[companyKey]) companyJobs[companyKey] = [];
 
-      companyJobs[companyName].push([
+      companyJobs[companyKey].push([
         timestamp,
         foreman,
         employee,
         licensePlate,
         service,
         actualAmt,
-        companyName,
+        companyDisplayNames[companyKey],
         oilChange,
         companyDetail,
       ]);
@@ -812,7 +858,7 @@ function calc() {
     const isToday = date.toDateString() === todayStr;
     const isThisMonth =
       date.getMonth() === month && date.getFullYear() === year;
-    const isCompanyJob = companyName !== "";
+    const isCompanyJob = companyKey !== "";
 
     if (!foremanMap[foremanName]) {
       foremanMap[foremanName] = {
@@ -845,8 +891,8 @@ function calc() {
 
     // Company
     if (isCompanyJob) {
-      if (!companyMap[companyName]) {
-        companyMap[companyName] = {
+      if (!companyMap[companyKey]) {
+        companyMap[companyKey] = {
           dailyAmt: 0,
           monthlyAmt: 0,
           dailyCars: 0,
@@ -854,12 +900,12 @@ function calc() {
         };
       }
       if (isToday) {
-        companyMap[companyName].dailyAmt += actualAmt;
-        companyMap[companyName].dailyCars++;
+        companyMap[companyKey].dailyAmt += actualAmt;
+        companyMap[companyKey].dailyCars++;
       }
       if (isThisMonth) {
-        companyMap[companyName].monthlyAmt += actualAmt;
-        companyMap[companyName].monthlyCars++;
+        companyMap[companyKey].monthlyAmt += actualAmt;
+        companyMap[companyKey].monthlyCars++;
       }
     }
 
@@ -944,14 +990,27 @@ function calc() {
   }
 
   // Clear output
-  const minimumReportRows = 400;
-  if (sheet.getMaxRows() < minimumReportRows) {
+  const requiredReportRows = Math.max(
+    REPORT_MINIMUM_ROWS,
+    data.length + REPORT_ROW_BUFFER + Object.keys(companyJobs).length * 4,
+  );
+  if (sheet.getMaxRows() < requiredReportRows) {
     sheet.insertRowsAfter(
       sheet.getMaxRows(),
-      minimumReportRows - sheet.getMaxRows(),
+      requiredReportRows - sheet.getMaxRows(),
     );
   }
-  sheet.getRange("M1:R400").clearContent().clearFormat();
+  const reportRenderRange = sheet.getRange(
+    1,
+    13,
+    sheet.getMaxRows(),
+    6,
+  );
+  reportRenderRange.clearContent().clearFormat();
+  sheet
+    .getRange(1, 13, sheet.getMaxRows(), 6)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
@@ -962,8 +1021,8 @@ function calc() {
     .merge()
     .setValue("EARNINGS REPORT")
     .setFontWeight("bold")
-    .setFontSize(18)
-    .setFontFamily("IBM Plex Sans")
+    .setFontSize(REPORT_FONT_SIZE.TITLE)
+    .setFontFamily(REPORT_FONT_FAMILY)
     .setHorizontalAlignment("center");
   currentRow++;
   sheet
@@ -977,8 +1036,8 @@ function calc() {
           "dd MMM yyyy HH:mm:ss",
         ),
     )
-    .setFontSize(10)
-    .setFontFamily("IBM Plex Sans")
+    .setFontSize(REPORT_FONT_SIZE.TIMESTAMP)
+    .setFontFamily(REPORT_FONT_FAMILY)
     .setHorizontalAlignment("center");
   currentRow += 2;
 
@@ -988,8 +1047,8 @@ function calc() {
     .merge()
     .setValue("DAILY & MONTHLY SUMMARY")
     .setFontWeight("bold")
-    .setFontSize(17)
-    .setFontFamily("IBM Plex Sans")
+    .setFontSize(REPORT_FONT_SIZE.SUMMARY_TITLE)
+    .setFontFamily(REPORT_FONT_FAMILY)
     .setHorizontalAlignment("center");
   currentRow++;
 
@@ -999,14 +1058,16 @@ function calc() {
     .merge()
     .setValue("WITHOUT COMPANY")
     .setFontWeight("bold")
-    .setFontFamily("IBM Plex Sans")
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_HEADER)
     .setHorizontalAlignment("center");
   sheet
     .getRange(currentRow, 16, 1, 2)
     .merge()
     .setValue("WITH COMPANY")
     .setFontWeight("bold")
-    .setFontFamily("IBM Plex Sans")
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_HEADER)
     .setHorizontalAlignment("center");
   currentRow++;
 
@@ -1025,7 +1086,7 @@ function calc() {
 
   // Left table
   const exclRange = sheet.getRange(currentRow, 13, summaryDataExcl.length, 2);
-  exclRange.setValues(summaryDataExcl).setFontFamily("IBM Plex Sans");
+  exclRange.setValues(summaryDataExcl).setFontFamily(REPORT_FONT_FAMILY);
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
   sheet
@@ -1033,12 +1094,12 @@ function calc() {
     .setFontWeight("bold")
     .setHorizontalAlignment("left")
     .setWrap(true)
-    .setFontFamily("IBM Plex Sans")
-    .setFontSize(14);
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.SUMMARY_LABEL);
 
   // Right table
   const inclRange = sheet.getRange(currentRow, 16, summaryDataIncl.length, 2);
-  inclRange.setValues(summaryDataIncl).setFontFamily("IBM Plex Sans");
+  inclRange.setValues(summaryDataIncl).setFontFamily(REPORT_FONT_FAMILY);
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
   sheet
@@ -1046,22 +1107,22 @@ function calc() {
     .setFontWeight("bold")
     .setHorizontalAlignment("left")
     .setWrap(true)
-    .setFontFamily("IBM Plex Sans")
-    .setFontSize(14);
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.SUMMARY_LABEL);
 
   // FORMAT SUMMARY VALUES
 
   sheet
     .getRange(currentRow, 14, summaryDataExcl.length, 1)
-    .setFontFamily("IBM Plex Sans")
-    .setFontSize(16)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.SUMMARY_VALUE)
     .setFontWeight("bold")
     .setHorizontalAlignment("right");
 
   sheet
     .getRange(currentRow, 17, summaryDataIncl.length, 1)
-    .setFontFamily("IBM Plex Sans")
-    .setFontSize(16)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.SUMMARY_VALUE)
     .setFontWeight("bold")
     .setHorizontalAlignment("right");
 
@@ -1074,23 +1135,24 @@ function calc() {
       .merge()
       .setValue(title)
       .setFontWeight("bold")
-      .setFontSize(16)
-      .setFontFamily("IBM Plex Sans")
+      .setFontSize(REPORT_FONT_SIZE.SECTION_TITLE)
+      .setFontFamily(REPORT_FONT_FAMILY)
       .setHorizontalAlignment("center");
     currentRow++;
     sheet
       .getRange(currentRow, 13, 1, headers.length)
       .setValues([headers])
       .setFontWeight("bold")
-      .setFontFamily("IBM Plex Sans");
+      .setFontFamily(REPORT_FONT_FAMILY)
+      .setFontSize(REPORT_FONT_SIZE.TABLE_HEADER);
     currentRow++;
     if (rows.length) {
       const range = sheet.getRange(currentRow, 13, rows.length, headers.length);
 
       range
         .setValues(rows)
-        .setFontFamily("IBM Plex Sans")
-        .setFontSize(12) // change this number
+        .setFontFamily(REPORT_FONT_FAMILY)
+        .setFontSize(REPORT_FONT_SIZE.TABLE_BODY)
         .setWrap(true);
 
       range.setBorder(true, true, true, true, true, true);
@@ -1123,7 +1185,8 @@ function calc() {
     .merge()
     .setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
     .setFontWeight("bold")
-    .setFontFamily("IBM Plex Sans")
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.HIGHLIGHT)
     .setHorizontalAlignment("center");
   currentRow += 2;
 
@@ -1203,13 +1266,15 @@ function calc() {
   );
 
   // Company
-  const compList = Object.keys(companyMap);
-  const compRows = compList.map((name) => [
-    name,
-    formatMoney(companyMap[name].dailyAmt),
-    companyMap[name].dailyCars,
-    formatMoney(companyMap[name].monthlyAmt),
-    companyMap[name].monthlyCars,
+  const compList = Object.keys(companyMap).sort((a, b) =>
+    companyDisplayNames[a].localeCompare(companyDisplayNames[b]),
+  );
+  const compRows = compList.map((companyKey) => [
+    companyDisplayNames[companyKey],
+    formatMoney(companyMap[companyKey].dailyAmt),
+    companyMap[companyKey].dailyCars,
+    formatMoney(companyMap[companyKey].monthlyAmt),
+    companyMap[companyKey].monthlyCars,
   ]);
   writeTable(
     "COMPANY JOBS",
@@ -1276,9 +1341,12 @@ function calc() {
 
   // Detailed company logs. Company names are discovered from the form data.
   Object.keys(companyJobs)
-    .sort((a, b) => a.localeCompare(b))
-    .forEach((companyName) => {
-      const companyRows = companyJobs[companyName].map((row) => {
+    .sort((a, b) =>
+      companyDisplayNames[a].localeCompare(companyDisplayNames[b]),
+    )
+    .forEach((companyKey) => {
+      const companyName = companyDisplayNames[companyKey];
+      const companyRows = companyJobs[companyKey].map((row) => {
         const date = row[0] ? new Date(row[0]) : "";
         const price = parseFloat(row[5]) || 0;
         const formattedPrice = `AED ${price.toLocaleString("en-US")}`;
@@ -1739,13 +1807,15 @@ function getMonthlyCompanyLogs(referenceDate) {
   const targetMonth = referenceDate.getMonth();
   const targetYear = referenceDate.getFullYear();
   const companyLogs = {};
+  const companyDisplayNames = {};
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const timestamp = row[0];
-    const companyName = (row[6] || "").toString().trim();
+    const companyName = normalizeCompanyName(row[6]);
+    const companyKey = getCompanyGroupKey(companyName);
 
-    if (!timestamp || !companyName) continue;
+    if (!timestamp || !companyKey) continue;
 
     const date = new Date(timestamp);
     if (date.getMonth() !== targetMonth || date.getFullYear() !== targetYear) {
@@ -1765,23 +1835,28 @@ function getMonthlyCompanyLogs(referenceDate) {
         ? parseFloat(specialPrice) || 0
         : serviceAmount;
 
-    if (!companyLogs[companyName]) companyLogs[companyName] = [];
+    if (!companyDisplayNames[companyKey]) {
+      companyDisplayNames[companyKey] = companyName;
+    }
+    if (!companyLogs[companyKey]) companyLogs[companyKey] = [];
 
-    companyLogs[companyName].push([
+    companyLogs[companyKey].push([
       date,
       row[3] || "",
       row[4] || "",
       actualAmount,
-      companyName,
+      companyDisplayNames[companyKey],
       row[8] || "",
     ]);
   }
 
-  Object.keys(companyLogs).forEach((companyName) => {
-    companyLogs[companyName].sort((a, b) => b[0] - a[0]);
+  const normalizedLogs = {};
+  Object.keys(companyLogs).forEach((companyKey) => {
+    companyLogs[companyKey].sort((a, b) => b[0] - a[0]);
+    normalizedLogs[companyDisplayNames[companyKey]] = companyLogs[companyKey];
   });
 
-  return companyLogs;
+  return normalizedLogs;
 }
 
 function safeFilePart(value) {
@@ -1807,6 +1882,11 @@ function formatCompanyExportSheet(exportSheet, rows) {
   exportSheet.getRange(1, 1, 1, 6).setValues(headers);
   if (rows.length) exportSheet.getRange(2, 1, rows.length, 6).setValues(rows);
 
+  exportSheet
+    .getRange(1, 1, rows.length + 1, 6)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
+
   exportSheet.setFrozenRows(1);
   exportSheet.setColumnWidth(1, 120);
   exportSheet.setColumnWidth(2, 150);
@@ -1820,6 +1900,7 @@ function formatCompanyExportSheet(exportSheet, rows) {
     .setFontWeight("bold")
     .setFontColor("white")
     .setBackground("#222222")
+    .setFontSize(REPORT_FONT_SIZE.TABLE_HEADER)
     .setHorizontalAlignment("center");
 
   if (rows.length) {
@@ -1864,12 +1945,19 @@ function emailMonthlyReport(skipCalc) {
     if (legacyLog) ss.deleteSheet(legacyLog);
 
     const tempReport = ss.insertSheet(reportSheetName);
-    const reportRange = sheet.getRange("M1:R400");
+    const reportLastRow = getLastReportRow(sheet);
+    if (tempReport.getMaxRows() < reportLastRow) {
+      tempReport.insertRowsAfter(
+        tempReport.getMaxRows(),
+        reportLastRow - tempReport.getMaxRows(),
+      );
+    }
+    const reportRange = sheet.getRange(1, 13, reportLastRow, 6);
     reportRange.copyTo(tempReport.getRange("A1"), { contentsOnly: false });
 
     tempReport.setColumnWidths(1, 6, 140);
     tempReport.setColumnWidth(1, 260);
-    tempReport.getRange("A1:F400").setWrap(true);
+    tempReport.getRange(1, 1, reportLastRow, 6).setWrap(true);
     tempReport.setFrozenRows(2);
     tempReport.getRange("A2").setValue(`AL RAKED EARNINGS REPORT ${monthName}`);
 
@@ -2772,7 +2860,17 @@ function emailExtendedShiftReport() {
   }
 
   // -------- RENDER REPORT --------
-  sheet.getRange("M1:R400").clearContent().clearFormat();
+  const extendedReportRange = sheet.getRange(
+    1,
+    13,
+    sheet.getMaxRows(),
+    6,
+  );
+  extendedReportRange.clearContent().clearFormat();
+  sheet
+    .getRange(1, 13, sheet.getMaxRows(), 6)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
@@ -2782,7 +2880,8 @@ function emailExtendedShiftReport() {
     .merge()
     .setValue("EXTENDED SHIFT REPORT")
     .setFontWeight("bold")
-    .setFontSize(18)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TITLE)
     .setHorizontalAlignment("center");
 
   currentRow++;
@@ -2791,6 +2890,8 @@ function emailExtendedShiftReport() {
     .getRange(currentRow, 13, 1, 5)
     .merge()
     .setValue("Yesterday + Today Combined")
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TIMESTAMP)
     .setHorizontalAlignment("center");
 
   currentRow += 2;
@@ -2812,23 +2913,40 @@ function emailExtendedShiftReport() {
 
   sheet
     .getRange(currentRow, 13, summaryDataExcl.length, 2)
-    .setValues(summaryDataExcl);
+    .setValues(summaryDataExcl)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
   sheet
     .getRange(currentRow, 16, summaryDataIncl.length, 2)
-    .setValues(summaryDataIncl);
+    .setValues(summaryDataIncl)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
   currentRow += summaryDataExcl.length + 3;
 
   // -------- TABLE FUNCTION (IDENTICAL) --------
   function writeTable(title, headers, rows) {
-    sheet.getRange(currentRow, 13, 1, headers.length).merge().setValue(title);
+    sheet
+      .getRange(currentRow, 13, 1, headers.length)
+      .merge()
+      .setValue(title)
+      .setFontWeight("bold")
+      .setFontFamily(REPORT_FONT_FAMILY)
+      .setFontSize(REPORT_FONT_SIZE.SECTION_TITLE);
     currentRow++;
-    sheet.getRange(currentRow, 13, 1, headers.length).setValues([headers]);
+    sheet
+      .getRange(currentRow, 13, 1, headers.length)
+      .setValues([headers])
+      .setFontWeight("bold")
+      .setFontFamily(REPORT_FONT_FAMILY)
+      .setFontSize(REPORT_FONT_SIZE.TABLE_HEADER);
     currentRow++;
     if (rows.length) {
       sheet
         .getRange(currentRow, 13, rows.length, headers.length)
-        .setValues(rows);
+        .setValues(rows)
+        .setFontFamily(REPORT_FONT_FAMILY)
+        .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
       currentRow += rows.length + 2;
     } else {
       currentRow += 2;
