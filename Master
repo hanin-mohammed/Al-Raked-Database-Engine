@@ -18,7 +18,7 @@ const REPORT_FONT_SIZE = Object.freeze({
   TABLE_BODY: 12,
   HIGHLIGHT: 10,
 });
-const REPORT_MINIMUM_ROWS = 400;
+const REPORT_MINIMUM_ROWS = 500;
 const REPORT_ROW_BUFFER = 300;
 
 function getAllEmployeeNamesFromSheet(data) {
