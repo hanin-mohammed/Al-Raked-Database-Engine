@@ -554,6 +554,7 @@ function doGet(e) {
   const employeeMonths = e.parameter.employeeMonths;
   const employeePerformance = e.parameter.employeePerformance;
   const month = e.parameter.month;
+  const trend = e.parameter.trend;
 
   if (key !== "013187") {
     return ContentService.createTextOutput("Unauthorized").setMimeType(
@@ -585,6 +586,12 @@ function doGet(e) {
     ).setMimeType(ContentService.MimeType.JSON);
   }
 
+  if (trend) {
+    return ContentService.createTextOutput(
+      JSON.stringify(getMonthlyTrendData(month)),
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
   if (search) {
     const results = searchVehicleHistory(search);
 
@@ -608,6 +615,54 @@ function getYesterdaySnapshot() {
   );
 
   return cache || "{}";
+}
+
+function getMonthlyTrendData(monthKey) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const historySheet = ss.getSheetByName("MonthlyHistory");
+  const tz = Session.getScriptTimeZone();
+  const today = new Date();
+  const currentMonthKey = Utilities.formatDate(today, tz, "yyyy-MM");
+  const targetMonth = monthKey || currentMonthKey;
+  const [yearText, monthText] = targetMonth.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+
+  if (!historySheet || historySheet.getLastRow() < 2) {
+    return {
+      month: targetMonth,
+      daysInMonth: daysInMonth,
+      rows: [],
+    };
+  }
+
+  const values = historySheet
+    .getRange(2, 1, historySheet.getLastRow() - 1, 5)
+    .getValues();
+
+  const rows = values
+    .filter((row) => {
+      const monthVal = row[1];
+      const monthStr = monthVal instanceof Date 
+        ? Utilities.formatDate(monthVal, tz, "yyyy-MM") 
+        : String(monthVal);
+      return monthStr === targetMonth;
+    })
+    .map((row) => ({
+      date: row[0],
+      month: row[1],
+      day: row[2],
+      earnings: Number(row[3]) || 0,
+      cars: Number(row[4]) || 0,
+    }))
+    .sort((a, b) => Number(a.day) - Number(b.day));
+
+  return {
+    month: targetMonth,
+    daysInMonth: daysInMonth,
+    rows: rows,
+  };
 }
 
 function calc() {
@@ -1943,7 +1998,67 @@ function createAuditTrigger() {
     .create();
 }
 
+function saveDailyGraphSnapshot() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  let historySheet = ss.getSheetByName("MonthlyHistory");
+
+  if (!historySheet) {
+    historySheet = ss.insertSheet("MonthlyHistory");
+
+    historySheet
+      .getRange("A1:E1")
+      .setValues([["Date", "MonthKey", "Day", "Earnings", "Cars"]]);
+
+    historySheet.hideSheet();
+  }
+
+  const report = getReportData();
+
+  const earnings = report.summary.today.earnings; // excluding company jobs
+  const cars = report.summary.today.cars; // excluding company jobs
+
+  const today = new Date();
+
+  const monthKey = Utilities.formatDate(
+    today,
+    Session.getScriptTimeZone(),
+    "yyyy-MM",
+  );
+
+  const dayNumber = today.getDate();
+
+  const lastRow = historySheet.getLastRow();
+
+  if (lastRow > 1) {
+    const existingData = historySheet
+      .getRange(2, 1, lastRow - 1, 3)
+      .getValues();
+
+    for (let i = 0; i < existingData.length; i++) {
+      const existingMonth = existingData[i][1];
+      const existingDay = existingData[i][2];
+
+      if (existingMonth === monthKey && existingDay === dayNumber) {
+        historySheet
+          .getRange(i + 2, 1, 1, 5)
+          .setValues([[today, monthKey, dayNumber, earnings, cars]]);
+
+        return;
+      }
+    }
+  }
+
+  historySheet.appendRow([today, monthKey, dayNumber, earnings, cars]);
+}
+
 function createTriggers() {
+  ScriptApp.newTrigger("saveDailyGraphSnapshot")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(25)
+    .everyDays(1)
+    .create();
   // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
   for (const t of triggers) {
@@ -1951,7 +2066,8 @@ function createTriggers() {
     if (
       funcName === "calc" ||
       funcName === "emailPerformanceReport" ||
-      funcName === "saveYesterdaySnapshot"
+      funcName === "saveYesterdaySnapshot" ||
+      funcName === "saveDailyGraphSnapshot"
     ) {
       ScriptApp.deleteTrigger(t);
     }
@@ -1965,6 +2081,12 @@ function createTriggers() {
     .everyDays(1)
     .create();
 
+  ScriptApp.newTrigger("saveDailyGraphSnapshot")
+    .timeBased()
+    .atHour(23)
+    .nearMinute(25)
+    .everyDays(1)
+    .create();
   // Send email report at 11:45 PM daily
   ScriptApp.newTrigger("emailPerformanceReport")
     .timeBased()
