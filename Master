@@ -672,6 +672,56 @@ function getMonthlyTrendData(monthKey) {
   };
 }
 
+function buildZeenaOilRows(zeenahMap, oilMap, formatMoney) {
+  const rows = Object.keys(zeenahMap)
+    .sort((a, b) => a.localeCompare(b))
+    .map((serviceName) => [
+      serviceName,
+      formatMoney(zeenahMap[serviceName].dailyAmt),
+      zeenahMap[serviceName].dailyCars,
+      formatMoney(zeenahMap[serviceName].monthlyAmt),
+      zeenahMap[serviceName].monthlyCars,
+    ]);
+
+  const oilTypes = Object.keys(oilMap).sort((a, b) => a.localeCompare(b));
+  let oilDailyAmount = 0;
+  let oilDailyCars = 0;
+  let oilMonthlyAmount = 0;
+  let oilMonthlyCars = 0;
+
+  oilTypes.forEach((oilType) => {
+    const oil = oilMap[oilType];
+    oilDailyAmount += oil.dailyAmt;
+    oilDailyCars += oil.dailyCars;
+    oilMonthlyAmount += oil.monthlyAmt;
+    oilMonthlyCars += oil.monthlyCars;
+  });
+
+  if (oilTypes.length) {
+    rows.push([
+      "OIL CHANGE TOTAL",
+      formatMoney(oilDailyAmount),
+      oilDailyCars,
+      formatMoney(oilMonthlyAmount),
+      oilMonthlyCars,
+    ]);
+  }
+
+  return rows;
+}
+
+function buildOilDetailRows(oilMap, formatMoney) {
+  return Object.keys(oilMap)
+    .sort((a, b) => a.localeCompare(b))
+    .map((oilType) => [
+      oilType,
+      formatMoney(oilMap[oilType].dailyAmt),
+      oilMap[oilType].dailyCars,
+      formatMoney(oilMap[oilType].monthlyAmt),
+      oilMap[oilType].monthlyCars,
+    ]);
+}
+
 function calc() {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -696,7 +746,7 @@ function calc() {
     carsMonthIncl = 0;
   let carsTodayExcl = 0,
     carsMonthExcl = 0;
-  let enterpriseJobs = [];
+  const companyJobs = {};
 
   for (let i = 1; i < data.length; i++) {
     const [
@@ -728,18 +778,19 @@ function calc() {
       actualAmt = serviceAmt; // fallback to service fee if no special price
     }
 
-    if (
-      (companyDetail && companyDetail.toString().trim() !== "") ||
-      (company && company.toString().trim() === "Private Office")
-    ) {
-      enterpriseJobs.push([
+    const companyName = (company || "").toString().trim();
+
+    if (companyName) {
+      if (!companyJobs[companyName]) companyJobs[companyName] = [];
+
+      companyJobs[companyName].push([
         timestamp,
         foreman,
         employee,
         licensePlate,
         service,
         actualAmt,
-        company,
+        companyName,
         oilChange,
         companyDetail,
       ]);
@@ -761,7 +812,7 @@ function calc() {
     const isToday = date.toDateString() === todayStr;
     const isThisMonth =
       date.getMonth() === month && date.getFullYear() === year;
-    const isCompanyJob = company && company.toString().trim() !== "";
+    const isCompanyJob = companyName !== "";
 
     if (!foremanMap[foremanName]) {
       foremanMap[foremanName] = {
@@ -794,8 +845,8 @@ function calc() {
 
     // Company
     if (isCompanyJob) {
-      if (!companyMap[company]) {
-        companyMap[company] = {
+      if (!companyMap[companyName]) {
+        companyMap[companyName] = {
           dailyAmt: 0,
           monthlyAmt: 0,
           dailyCars: 0,
@@ -803,12 +854,12 @@ function calc() {
         };
       }
       if (isToday) {
-        companyMap[company].dailyAmt += serviceAmt;
-        companyMap[company].dailyCars++;
+        companyMap[companyName].dailyAmt += actualAmt;
+        companyMap[companyName].dailyCars++;
       }
       if (isThisMonth) {
-        companyMap[company].monthlyAmt += serviceAmt;
-        companyMap[company].monthlyCars++;
+        companyMap[companyName].monthlyAmt += actualAmt;
+        companyMap[companyName].monthlyCars++;
       }
     }
 
@@ -893,6 +944,13 @@ function calc() {
   }
 
   // Clear output
+  const minimumReportRows = 400;
+  if (sheet.getMaxRows() < minimumReportRows) {
+    sheet.insertRowsAfter(
+      sheet.getMaxRows(),
+      minimumReportRows - sheet.getMaxRows(),
+    );
+  }
   sheet.getRange("M1:R400").clearContent().clearFormat();
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
@@ -1164,37 +1222,34 @@ function calc() {
     ],
     compRows,
   );
-  // Zeena + Perfume + Wiper table
-  const zeenahList = Object.keys(zeenahMap);
-  const zeenahRows = zeenahList.map((svc) => [
-    svc,
-    formatMoney(zeenahMap[svc].dailyAmt),
-    zeenahMap[svc].dailyCars,
-    formatMoney(zeenahMap[svc].monthlyAmt),
-    zeenahMap[svc].monthlyCars,
-  ]);
+  // Zeena services and oil-change details share one summary table.
+  const zeenaOilRows = buildZeenaOilRows(zeenahMap, oilMap, formatMoney);
   writeTable(
-    "ZEENA SERVICE",
+    "ZEENA / OIL SERVICE",
     [
-      "SERVICE",
+      "SERVICE / OIL TYPE",
       "EARNINGS TODAY",
       "CARS TODAY",
       "EARNINGS THIS MONTH",
       "CARS THIS MONTH",
     ],
-    zeenahRows,
+    zeenaOilRows,
     [0],
   );
 
-  // Oil Change
-  const oilList = Object.keys(oilMap);
-  const oilRows = oilList.map((oilType) => [
-    oilType,
-    formatMoney(oilMap[oilType].dailyAmt),
-    oilMap[oilType].dailyCars,
-    formatMoney(oilMap[oilType].monthlyAmt),
-    oilMap[oilType].monthlyCars,
-  ]);
+  if (zeenaOilRows.length) {
+    sheet
+      .getRange(
+        currentRow - zeenaOilRows.length - 2,
+        13,
+        zeenaOilRows.length,
+        1,
+      )
+      .setWrap(true);
+  }
+
+  // Preserve the original per-type oil breakdown below the summary.
+  const oilDetailRows = buildOilDetailRows(oilMap, formatMoney);
   writeTable(
     "OIL CHANGE",
     [
@@ -1204,59 +1259,62 @@ function calc() {
       "EARNINGS THIS MONTH",
       "CARS THIS MONTH",
     ],
-    oilRows,
+    oilDetailRows,
     [0],
   );
 
-  if (oilRows.length) {
+  if (oilDetailRows.length) {
     sheet
-      .getRange(currentRow - oilRows.length - 2, 13, oilRows.length, 1)
+      .getRange(
+        currentRow - oilDetailRows.length - 2,
+        13,
+        oilDetailRows.length,
+        1,
+      )
       .setWrap(true);
   }
 
-  // Enterprise Jobs
-  if (enterpriseJobs && enterpriseJobs.length) {
-    const enterpriseRows = enterpriseJobs.map((row) => {
-      const date = row[0] ? new Date(row[0]) : "";
-      const price = parseFloat(row[5]) || 0;
-      const formattedPrice = `AED ${price.toLocaleString("en-US")}`;
-      return [date, row[3], row[4], formattedPrice, row[6], row[8]];
-      // columns: Date, License Plate, Service, Price, Company, Detail
-    });
+  // Detailed company logs. Company names are discovered from the form data.
+  Object.keys(companyJobs)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((companyName) => {
+      const companyRows = companyJobs[companyName].map((row) => {
+        const date = row[0] ? new Date(row[0]) : "";
+        const price = parseFloat(row[5]) || 0;
+        const formattedPrice = `AED ${price.toLocaleString("en-US")}`;
+        return [date, row[3], row[4], formattedPrice, row[6], row[8]];
+        // columns: Date, License Plate, Service, Price, Company, Detail
+      });
 
-    writeTable(
-      "PRIVATE OFFICE VEHICLE LOG",
-      ["DATE", "LICENSE PLATE", "SERVICE", "PRICE", "COMPANY", "DETAIL"],
-      enterpriseRows,
-    );
-
-    // Adjust alignment and bold manually after writing
-    const startRow = currentRow - enterpriseRows.length - 2; // writeTable moves currentRow
-    const sheetRange = sheet.getRange(startRow, 13, enterpriseRows.length, 6);
-
-    sheet
-      .getRange(startRow, 13, enterpriseRows.length, 1)
-      .setNumberFormat("dd/MM/yy");
-
-    // Bold all
-    sheetRange.setFontWeight("bold");
-
-    // Alignment
-    for (let c = 0; c < 6; c++) {
-      const colRange = sheet.getRange(
-        startRow,
-        13 + c,
-        enterpriseRows.length,
-        1,
+      writeTable(
+        `${companyName.toUpperCase()} VEHICLE LOG`,
+        ["DATE", "LICENSE PLATE", "SERVICE", "PRICE", "COMPANY", "DETAIL"],
+        companyRows,
       );
-      if (c === 1)
-        colRange.setHorizontalAlignment("center"); // License Plate
-      else if (c === 3)
-        colRange.setHorizontalAlignment("right"); // Price
-      else colRange.setHorizontalAlignment("left"); // Rest
-    }
-    sheet.getRange(startRow, 18, enterpriseRows.length, 1).setWrap(true); // Column Q
-  }
+
+      // Adjust alignment and bold manually after writing
+      const startRow = currentRow - companyRows.length - 2;
+      const sheetRange = sheet.getRange(startRow, 13, companyRows.length, 6);
+
+      sheet
+        .getRange(startRow, 13, companyRows.length, 1)
+        .setNumberFormat("dd/MM/yy");
+
+      sheetRange.setFontWeight("bold");
+
+      for (let c = 0; c < 6; c++) {
+        const colRange = sheet.getRange(
+          startRow,
+          13 + c,
+          companyRows.length,
+          1,
+        );
+        if (c === 1) colRange.setHorizontalAlignment("center");
+        else if (c === 3) colRange.setHorizontalAlignment("right");
+        else colRange.setHorizontalAlignment("left");
+      }
+      sheet.getRange(startRow, 18, companyRows.length, 1).setWrap(true);
+    });
 
   updateTelegramCache();
 }
@@ -1674,6 +1732,110 @@ function emailPerformanceReport(skipCalc) {
   }
 }
 
+function getMonthlyCompanyLogs(referenceDate) {
+  const sheet =
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
+  const data = sheet.getDataRange().getValues();
+  const targetMonth = referenceDate.getMonth();
+  const targetYear = referenceDate.getFullYear();
+  const companyLogs = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const timestamp = row[0];
+    const companyName = (row[6] || "").toString().trim();
+
+    if (!timestamp || !companyName) continue;
+
+    const date = new Date(timestamp);
+    if (date.getMonth() !== targetMonth || date.getFullYear() !== targetYear) {
+      continue;
+    }
+
+    let serviceAmount = 0;
+    if (row[5] && row[5].toString().trim().toLowerCase() !== "free") {
+      serviceAmount = parseFloat(row[5]) || 0;
+    }
+
+    const specialPrice = row[9];
+    const actualAmount =
+      specialPrice !== "" &&
+      specialPrice !== null &&
+      specialPrice !== undefined
+        ? parseFloat(specialPrice) || 0
+        : serviceAmount;
+
+    if (!companyLogs[companyName]) companyLogs[companyName] = [];
+
+    companyLogs[companyName].push([
+      date,
+      row[3] || "",
+      row[4] || "",
+      actualAmount,
+      companyName,
+      row[8] || "",
+    ]);
+  }
+
+  Object.keys(companyLogs).forEach((companyName) => {
+    companyLogs[companyName].sort((a, b) => b[0] - a[0]);
+  });
+
+  return companyLogs;
+}
+
+function safeFilePart(value) {
+  return value
+    .toString()
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function formatCompanyExportSheet(exportSheet, rows) {
+  const headers = [[
+    "DATE",
+    "LICENSE PLATE",
+    "SERVICE",
+    "PRICE",
+    "COMPANY",
+    "DETAIL",
+  ]];
+
+  exportSheet.getRange(1, 1, 1, 6).setValues(headers);
+  if (rows.length) exportSheet.getRange(2, 1, rows.length, 6).setValues(rows);
+
+  exportSheet.setFrozenRows(1);
+  exportSheet.setColumnWidth(1, 120);
+  exportSheet.setColumnWidth(2, 150);
+  exportSheet.setColumnWidth(3, 160);
+  exportSheet.setColumnWidth(4, 120);
+  exportSheet.setColumnWidth(5, 180);
+  exportSheet.setColumnWidth(6, 320);
+
+  exportSheet
+    .getRange(1, 1, 1, 6)
+    .setFontWeight("bold")
+    .setFontColor("white")
+    .setBackground("#222222")
+    .setHorizontalAlignment("center");
+
+  if (rows.length) {
+    exportSheet.getRange(2, 1, rows.length, 1).setNumberFormat("dd/MM/yy");
+    exportSheet
+      .getRange(2, 4, rows.length, 1)
+      .setNumberFormat('"AED" #,##0.00');
+  }
+
+  exportSheet.getRange("A:B").setHorizontalAlignment("center");
+  exportSheet.getRange("C:C").setHorizontalAlignment("left");
+  exportSheet.getRange("D:D").setHorizontalAlignment("right");
+  exportSheet.getRange("E:F").setHorizontalAlignment("left");
+  exportSheet.getRange("F:F").setWrap(true);
+}
+
 function emailMonthlyReport(skipCalc) {
   const today = new Date();
   const tomorrow = new Date(
@@ -1682,222 +1844,129 @@ function emailMonthlyReport(skipCalc) {
     today.getDate() + 1,
   );
 
-  // STOP if today is NOT the last day of the month
-  if (tomorrow.getMonth() === today.getMonth()) {
-    return;
-  }
+  if (tomorrow.getMonth() === today.getMonth()) return;
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("Form Responses 1");
-
   const tz = Session.getScriptTimeZone();
-
   const monthName = Utilities.formatDate(today, tz, "MMMM yyyy");
   const fileDate = Utilities.formatDate(today, tz, "MMMM_yyyy");
-
-  const email = "imhaninmohd@gmail.com";
-
-  // Generate the latest report unless the nightly controller already did it.
-  if (!skipCalc) calc();
-
-  SpreadsheetApp.flush();
-
-  // ---------------------------
-  // 1. COPY PERFORMANCE REPORT
-  // ---------------------------
-
   const reportSheetName = "TEMP_MONTHLY_REPORT";
-  const logSheetName = "TEMP_PRIVATE_LOG";
-  let tempReport = null;
-  let tempLog = null;
-  let tempSpreadsheet = null;
+  const temporarySpreadsheetIds = [];
+
+  if (!skipCalc) calc();
+  SpreadsheetApp.flush();
 
   try {
+    const existingReport = ss.getSheetByName(reportSheetName);
+    const legacyLog = ss.getSheetByName("TEMP_PRIVATE_LOG");
+    if (existingReport) ss.deleteSheet(existingReport);
+    if (legacyLog) ss.deleteSheet(legacyLog);
 
-  if (ss.getSheetByName(reportSheetName))
-    ss.deleteSheet(ss.getSheetByName(reportSheetName));
-  if (ss.getSheetByName(logSheetName))
-    ss.deleteSheet(ss.getSheetByName(logSheetName));
+    const tempReport = ss.insertSheet(reportSheetName);
+    const reportRange = sheet.getRange("M1:R400");
+    reportRange.copyTo(tempReport.getRange("A1"), { contentsOnly: false });
 
-  tempReport = ss.insertSheet(reportSheetName);
+    tempReport.setColumnWidths(1, 6, 140);
+    tempReport.setColumnWidth(1, 260);
+    tempReport.getRange("A1:F400").setWrap(true);
+    tempReport.setFrozenRows(2);
+    tempReport.getRange("A2").setValue(`AL RAKED EARNINGS REPORT ${monthName}`);
 
-  // Copy the report block (M:R area)
-  const reportRange = sheet.getRange("M1:R400");
-
-  reportRange.copyTo(tempReport.getRange("A1"), { contentsOnly: false });
-  // Ensure readable PDF layout
-  tempReport.setColumnWidths(1, 6, 140); // Fit A–F across page
-  tempReport.setColumnWidth(1, 260); // Wider title column
-  tempReport.getRange("A1:F400").setWrap(true);
-  tempReport.setFrozenRows(2);
-
-  // -----------------------------------
-  // 2. CHANGE REPORT TITLE
-  // -----------------------------------
-
-  tempReport.getRange("A2").setValue(`AL RAKED EARNINGS REPORT ${monthName}`);
-
-  // -----------------------------------
-  // 3. REMOVE PRIVATE OFFICE LOG
-  // -----------------------------------
-
-  const values = tempReport.getDataRange().getValues();
-
-  for (let i = 0; i < values.length; i++) {
-    const cell = values[i][0];
-
-    if (cell && cell.toString().includes("PRIVATE OFFICE VEHICLE LOG")) {
-      tempReport.deleteRows(i + 1, values.length - i);
-      break;
-    }
-  }
-
-  // -----------------------------------
-  // 4. EXPORT REPORT PDF
-  // -----------------------------------
-
-  const pdfUrl =
-    `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
-    `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
-    `&pagenumbers=false&gridlines=false&fzr=false&gid=${tempReport.getSheetId()}`;
-
-  const options = {
-    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-  };
-
-  const pdfBlob = UrlFetchApp.fetch(pdfUrl, options)
-    .getBlob()
-    .setName(`Al_Raked_Earnings_Report_${fileDate}.pdf`);
-
-  // -----------------------------------
-  // EXTRACT PRIVATE OFFICE LOG DIRECTLY
-  // -----------------------------------
-
-  const reportData = sheet.getRange("M1:R400").getValues();
-
-  let headerRow = -1;
-
-  // locate the log section
-  for (let i = 0; i < reportData.length; i++) {
-    if (
-      reportData[i][0] &&
-      reportData[i][0].toString().includes("PRIVATE OFFICE VEHICLE LOG")
-    ) {
-      headerRow = i + 1;
-      break;
-    }
-  }
-
-  tempLog = ss.insertSheet(logSheetName);
-
-  if (headerRow !== -1) {
-    let rows = [];
-
-    for (let i = headerRow; i < reportData.length; i++) {
-      const row = reportData[i];
-
-      // stop when the table ends
-      if (row.join("").trim() === "") break;
-
-      rows.push(row.slice(0, 6));
-    }
-
-    if (rows.length) {
-      tempLog.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
-    }
-  }
-
-  // -----------------------------------
-  // 6. EXPORT EXCEL FILE
-  // -----------------------------------
-
-  // -----------------------------------
-  // EXPORT PRIVATE OFFICE LOG AS XLSX
-  // -----------------------------------
-
-  tempSpreadsheet = SpreadsheetApp.create("TEMP_PRIVATE_LOG_EXPORT");
-  const exportSheet = tempSpreadsheet.getSheets()[0];
-
-  const logData = tempLog.getDataRange().getValues();
-
-  if (logData.length > 0) {
-    exportSheet
-      .getRange(1, 1, logData.length, logData[0].length)
-      .setValues(logData);
-  }
-
-  // ---------- FORMAT PRIVATE LOG SHEET ----------
-
-  // column widths
-  exportSheet.setColumnWidth(1, 120); // DATE
-  exportSheet.setColumnWidth(2, 150); // LICENSE PLATE
-  exportSheet.setColumnWidth(3, 160); // SERVICE
-  exportSheet.setColumnWidth(4, 120); // PRICE
-  exportSheet.setColumnWidth(5, 160); // COMPANY
-  exportSheet.setColumnWidth(6, 320); // DETAIL (long text)
-
-  // alignment consistency
-  exportSheet.getRange("A:A").setHorizontalAlignment("center"); // DATE
-  exportSheet.getRange("B:B").setHorizontalAlignment("center"); // PLATE
-  exportSheet.getRange("C:C").setHorizontalAlignment("left"); // SERVICE
-  exportSheet.getRange("D:D").setHorizontalAlignment("right"); // PRICE
-  exportSheet.getRange("E:E").setHorizontalAlignment("left"); // COMPANY
-  exportSheet.getRange("F:F").setHorizontalAlignment("left"); // DETAIL
-
-  // wrap long detail text
-  exportSheet.getRange("F:F").setWrap(true);
-
-  // header formatting
-  exportSheet
-    .getRange("1:1")
-    .setFontWeight("bold")
-    .setHorizontalAlignment("center");
-
-  SpreadsheetApp.flush();
-
-  const xlsxUrl = `https://docs.google.com/spreadsheets/d/${tempSpreadsheet.getId()}/export?format=xlsx`;
-
-  const excelBlob = UrlFetchApp.fetch(xlsxUrl, options)
-    .getBlob()
-    .setName(`Private_Office_Log_${fileDate}.xlsx`);
-
-  // -----------------------------------
-  // 7. SEND EMAIL
-  // -----------------------------------
-
-  MailApp.sendEmail({
-    to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
-    subject: `Al Raked Monthly Earnings Report - ${monthName}`,
-
-    body:
-      "Sir,\n\n" +
-      "Monthly consolidation complete for " +
-      monthName +
-      ".\n\n" +
-      "Included in this transmission:\n" +
-      "1. Earnings performance report (PDF)\n" +
-      "2. Private Office vehicle log (Excel)\n\n" +
-      "All data has been structured, validated, and archived.\n" +
-      "Systems are aligned for the upcoming cycle.\n\n" +
-      "Please review at your convenience.",
-
-    attachments: [pdfBlob, excelBlob],
-  });
-
-  } finally {
-    const reportTab = ss.getSheetByName(reportSheetName);
-    const logTab = ss.getSheetByName(logSheetName);
-
-    if (reportTab) ss.deleteSheet(reportTab);
-    if (logTab) ss.deleteSheet(logTab);
-
-    if (tempSpreadsheet) {
-      try {
-        DriveApp.getFileById(tempSpreadsheet.getId()).setTrashed(true);
-      } catch (cleanupError) {
-        Logger.log("Monthly export cleanup failed: " + cleanupError);
+    // Company detail logs are attached separately as Excel workbooks.
+    const reportValues = tempReport.getDataRange().getValues();
+    for (let i = 0; i < reportValues.length; i++) {
+      const title = (reportValues[i][0] || "").toString().trim();
+      if (title.endsWith(" VEHICLE LOG")) {
+        tempReport.deleteRows(i + 1, reportValues.length - i);
+        break;
       }
     }
+
+    const options = {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    };
+
+    const pdfUrl =
+      `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+      `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+      `&pagenumbers=false&gridlines=false&fzr=false&gid=${tempReport.getSheetId()}`;
+    const pdfResponse = UrlFetchApp.fetch(pdfUrl, options);
+
+    if (pdfResponse.getResponseCode() !== 200) {
+      throw new Error("Monthly earnings PDF export failed.");
+    }
+
+    const attachments = [
+      pdfResponse
+        .getBlob()
+        .setName(`Al_Raked_Earnings_Report_${fileDate}.pdf`),
+    ];
+
+    const companyLogs = getMonthlyCompanyLogs(today);
+    const companyNames = Object.keys(companyLogs).sort((a, b) =>
+      a.localeCompare(b),
+    );
+
+    for (const companyName of companyNames) {
+      const safeCompanyName = safeFilePart(companyName);
+      const tempSpreadsheet = SpreadsheetApp.create(
+        `TEMP_${safeCompanyName}_LOG_EXPORT`,
+      );
+      temporarySpreadsheetIds.push(tempSpreadsheet.getId());
+
+      const exportSheet = tempSpreadsheet.getSheets()[0];
+      exportSheet.setName("Company Log");
+      formatCompanyExportSheet(exportSheet, companyLogs[companyName]);
+      SpreadsheetApp.flush();
+
+      const xlsxUrl =
+        `https://docs.google.com/spreadsheets/d/${tempSpreadsheet.getId()}` +
+        `/export?format=xlsx`;
+      const xlsxResponse = UrlFetchApp.fetch(xlsxUrl, options);
+
+      if (xlsxResponse.getResponseCode() !== 200) {
+        throw new Error(`Excel export failed for ${companyName}.`);
+      }
+
+      attachments.push(
+        xlsxResponse
+          .getBlob()
+          .setName(`${safeCompanyName}_Log_${fileDate}.xlsx`),
+      );
+    }
+
+    const companyListText = companyNames.length
+      ? companyNames
+          .map((name, index) => `${index + 2}. ${name} vehicle log (Excel)`)
+          .join("\n")
+      : "2. No company vehicle logs were recorded this month.";
+
+    MailApp.sendEmail({
+      to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
+      subject: `Al Raked Monthly Earnings Report - ${monthName}`,
+      body:
+        "Sir,\n\n" +
+        `Monthly consolidation complete for ${monthName}.\n\n` +
+        "Included in this transmission:\n" +
+        "1. Earnings performance report (PDF)\n" +
+        companyListText +
+        "\n\nAll data has been structured, validated and archived.\n" +
+        "Please review at your convenience.",
+      attachments: attachments,
+    });
+  } finally {
+    const reportTab = ss.getSheetByName(reportSheetName);
+    if (reportTab) ss.deleteSheet(reportTab);
+
+    temporarySpreadsheetIds.forEach((spreadsheetId) => {
+      try {
+        DriveApp.getFileById(spreadsheetId).setTrashed(true);
+      } catch (cleanupError) {
+        Logger.log("Company export cleanup failed: " + cleanupError);
+      }
+    });
   }
 }
 
@@ -2829,36 +2898,23 @@ function emailExtendedShiftReport() {
     compRows,
   );
 
-  // -------- ZEENA --------
-  const zeenahRows = Object.keys(zeenahMap).map((s) => [
-    s,
-    formatMoney(zeenahMap[s].dailyAmt),
-    zeenahMap[s].dailyCars,
-    formatMoney(zeenahMap[s].monthlyAmt),
-    zeenahMap[s].monthlyCars,
-  ]);
+  // -------- ZEENA / OIL --------
+  const zeenaOilRows = buildZeenaOilRows(zeenahMap, oilMap, formatMoney);
 
   writeTable(
-    "ZEENA SERVICE",
+    "ZEENA / OIL SERVICE",
     [
-      "SERVICE",
+      "SERVICE / OIL TYPE",
       "EARNINGS TODAY",
       "CARS TODAY",
       "EARNINGS THIS MONTH",
       "CARS THIS MONTH",
     ],
-    zeenahRows,
+    zeenaOilRows,
   );
 
-  // -------- OIL --------
-  const oilRows = Object.keys(oilMap).map((o) => [
-    o,
-    formatMoney(oilMap[o].dailyAmt),
-    oilMap[o].dailyCars,
-    formatMoney(oilMap[o].monthlyAmt),
-    oilMap[o].monthlyCars,
-  ]);
-
+  // -------- OIL TYPE BREAKDOWN --------
+  const oilDetailRows = buildOilDetailRows(oilMap, formatMoney);
   writeTable(
     "OIL CHANGE",
     [
@@ -2868,7 +2924,7 @@ function emailExtendedShiftReport() {
       "EARNINGS THIS MONTH",
       "CARS THIS MONTH",
     ],
-    oilRows,
+    oilDetailRows,
   );
 
   SpreadsheetApp.flush();
