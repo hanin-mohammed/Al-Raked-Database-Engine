@@ -2,6 +2,9 @@ const TELEGRAM_BOT_TOKEN = "8516798189:AAHb2ybtmIq51Xw4DliH7AoHDAh6whCmG98";
 
 const TELEGRAM_CHANNEL_ID = "-1003868639331";
 
+// Temporary master switch. Set to true when Telegram should resume.
+const TELEGRAM_ENABLED = false;
+
 function getAllEmployeeNamesFromSheet(data) {
   const employeeSet = new Set();
 
@@ -405,6 +408,8 @@ function getReportData() {
   };
 }
 function updateTelegramCache() {
+  if (!TELEGRAM_ENABLED) return;
+
   const data = getReportData();
 
   PropertiesService.getScriptProperties().setProperty(
@@ -435,6 +440,8 @@ function saveYesterdaySnapshot() {
 }
 
 function sendTelegramEntry(rowData) {
+  if (!TELEGRAM_ENABLED) return;
+
   const [
     timestamp,
     foreman,
@@ -644,8 +651,8 @@ function getMonthlyTrendData(monthKey) {
   const rows = values
     .filter((row) => {
       const monthVal = row[1];
-      const monthStr = monthVal instanceof Date 
-        ? Utilities.formatDate(monthVal, tz, "yyyy-MM") 
+      const monthStr = monthVal instanceof Date
+        ? Utilities.formatDate(monthVal, tz, "yyyy-MM")
         : String(monthVal);
       return monthStr === targetMonth;
     })
@@ -1545,13 +1552,13 @@ function onOpen() {
     .addToUi();
 }
 
-function emailPerformanceReport() {
+function emailPerformanceReport(skipCalc) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("Form Responses 1");
     const auditSheet = ss.getSheetByName("PriceAudit");
 
-    calc();
+    if (!skipCalc) calc();
 
     SpreadsheetApp.flush();
 
@@ -1667,7 +1674,7 @@ function emailPerformanceReport() {
   }
 }
 
-function emailMonthlyReport() {
+function emailMonthlyReport(skipCalc) {
   const today = new Date();
   const tomorrow = new Date(
     today.getFullYear(),
@@ -1690,8 +1697,8 @@ function emailMonthlyReport() {
 
   const email = "imhaninmohd@gmail.com";
 
-  // Generate latest report
-  calc();
+  // Generate the latest report unless the nightly controller already did it.
+  if (!skipCalc) calc();
 
   SpreadsheetApp.flush();
 
@@ -1701,13 +1708,18 @@ function emailMonthlyReport() {
 
   const reportSheetName = "TEMP_MONTHLY_REPORT";
   const logSheetName = "TEMP_PRIVATE_LOG";
+  let tempReport = null;
+  let tempLog = null;
+  let tempSpreadsheet = null;
+
+  try {
 
   if (ss.getSheetByName(reportSheetName))
     ss.deleteSheet(ss.getSheetByName(reportSheetName));
   if (ss.getSheetByName(logSheetName))
     ss.deleteSheet(ss.getSheetByName(logSheetName));
 
-  const tempReport = ss.insertSheet(reportSheetName);
+  tempReport = ss.insertSheet(reportSheetName);
 
   // Copy the report block (M:R area)
   const reportRange = sheet.getRange("M1:R400");
@@ -1776,7 +1788,7 @@ function emailMonthlyReport() {
     }
   }
 
-  const tempLog = ss.insertSheet(logSheetName);
+  tempLog = ss.insertSheet(logSheetName);
 
   if (headerRow !== -1) {
     let rows = [];
@@ -1803,7 +1815,7 @@ function emailMonthlyReport() {
   // EXPORT PRIVATE OFFICE LOG AS XLSX
   // -----------------------------------
 
-  const tempSpreadsheet = SpreadsheetApp.create("TEMP_PRIVATE_LOG_EXPORT");
+  tempSpreadsheet = SpreadsheetApp.create("TEMP_PRIVATE_LOG_EXPORT");
   const exportSheet = tempSpreadsheet.getSheets()[0];
 
   const logData = tempLog.getDataRange().getValues();
@@ -1849,15 +1861,12 @@ function emailMonthlyReport() {
     .getBlob()
     .setName(`Private_Office_Log_${fileDate}.xlsx`);
 
-  // cleanup spreadsheet
-  DriveApp.getFileById(tempSpreadsheet.getId()).setTrashed(true);
-
   // -----------------------------------
   // 7. SEND EMAIL
   // -----------------------------------
 
   MailApp.sendEmail({
-    to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com",
+    to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
     subject: `Al Raked Monthly Earnings Report - ${monthName}`,
 
     body:
@@ -1875,12 +1884,21 @@ function emailMonthlyReport() {
     attachments: [pdfBlob, excelBlob],
   });
 
-  // -----------------------------------
-  // 8. CLEAN UP
-  // -----------------------------------
+  } finally {
+    const reportTab = ss.getSheetByName(reportSheetName);
+    const logTab = ss.getSheetByName(logSheetName);
 
-  ss.deleteSheet(tempReport);
-  ss.deleteSheet(tempLog);
+    if (reportTab) ss.deleteSheet(reportTab);
+    if (logTab) ss.deleteSheet(logTab);
+
+    if (tempSpreadsheet) {
+      try {
+        DriveApp.getFileById(tempSpreadsheet.getId()).setTrashed(true);
+      } catch (cleanupError) {
+        Logger.log("Monthly export cleanup failed: " + cleanupError);
+      }
+    }
+  }
 }
 
 function cleanSlateProtocol() {
@@ -1967,20 +1985,8 @@ function createCleanSlateTrigger() {
 }
 
 function createMonthlyEmailTrigger() {
-  const triggers = ScriptApp.getProjectTriggers();
-
-  for (const t of triggers) {
-    if (t.getHandlerFunction() === "emailMonthlyReport") {
-      ScriptApp.deleteTrigger(t);
-    }
-  }
-
-  ScriptApp.newTrigger("emailMonthlyReport")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(50)
-    .everyDays(1)
-    .create();
+  // Monthly work is now part of the single nightly controller.
+  createTriggers();
 }
 
 function createAuditTrigger() {
@@ -2053,67 +2059,86 @@ function saveDailyGraphSnapshot() {
 }
 
 function createTriggers() {
-  ScriptApp.newTrigger("saveDailyGraphSnapshot")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(25)
-    .everyDays(1)
-    .create();
-  // Delete all existing triggers for calc and emailPerformanceReport to avoid duplicates
+  // Remove the old individual night triggers so they cannot overlap.
   const triggers = ScriptApp.getProjectTriggers();
   for (const t of triggers) {
     const funcName = t.getHandlerFunction();
     if (
       funcName === "calc" ||
       funcName === "emailPerformanceReport" ||
+      funcName === "emailMonthlyReport" ||
       funcName === "saveYesterdaySnapshot" ||
-      funcName === "saveDailyGraphSnapshot"
+      funcName === "saveDailyGraphSnapshot" ||
+      funcName === "duplicateSheetAtMonthEnd" ||
+      funcName === "runNightlyOperations"
     ) {
       ScriptApp.deleteTrigger(t);
     }
   }
 
-  // Run calc() at 11:30 PM daily (final update before email)
-  ScriptApp.newTrigger("calc")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(15)
-    .everyDays(1)
-    .create();
-
-  ScriptApp.newTrigger("saveDailyGraphSnapshot")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(25)
-    .everyDays(1)
-    .create();
-  // Send email report at 11:45 PM daily
-  ScriptApp.newTrigger("emailPerformanceReport")
+  // One trigger runs every night operation in a fixed sequence. The +/-15
+  // minute window remains safely before midnight.
+  ScriptApp.newTrigger("runNightlyOperations")
     .timeBased()
     .atHour(23)
     .nearMinute(30)
     .everyDays(1)
     .create();
-
-  // Save yesterday snapshot
-  ScriptApp.newTrigger("saveYesterdaySnapshot")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(45)
-    .everyDays(1)
-    .create();
 }
-function onFormSubmit(e) {
-  processFormSubmission();
 
-  calc();
-
-  const rowData = e.values;
+function runNightlyOperations() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
 
   try {
-    sendTelegramEntry(rowData);
-  } catch (err) {
-    Logger.log("Telegram send failed: " + err);
+    calc();
+    saveDailyGraphSnapshot();
+    emailPerformanceReport(true);
+    if (TELEGRAM_ENABLED) saveYesterdaySnapshot();
+
+    const now = new Date();
+    const tomorrow = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
+
+    if (tomorrow.getMonth() !== now.getMonth()) {
+      let monthlyError = null;
+
+      try {
+        emailMonthlyReport(true);
+      } catch (err) {
+        monthlyError = err;
+        Logger.log("Monthly report failed: " + err);
+      } finally {
+        // Preserve the raw monthly archive even if attachment export fails.
+        duplicateSheetAtMonthEnd();
+      }
+
+      if (monthlyError) throw monthlyError;
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+function onFormSubmit(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+
+    processFormSubmission();
+    calc();
+
+    if (TELEGRAM_ENABLED) {
+      try {
+        sendTelegramEntry(e.values);
+      } catch (err) {
+        Logger.log("Telegram send failed: " + err);
+      }
+    }
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
   }
 }
 
@@ -2447,21 +2472,8 @@ function getEmployeeMonthlyPerformance(employeeName, monthKey) {
   };
 }
 function createMonthEndTrigger() {
-  // Remove existing trigger if present
-  const triggers = ScriptApp.getProjectTriggers();
-  for (const t of triggers) {
-    if (t.getHandlerFunction() === "duplicateSheetAtMonthEnd") {
-      ScriptApp.deleteTrigger(t);
-    }
-  }
-
-  // Run every day at 11:55 PM
-  ScriptApp.newTrigger("duplicateSheetAtMonthEnd")
-    .timeBased()
-    .atHour(23)
-    .nearMinute(55)
-    .everyDays(1)
-    .create();
+  // Month-end archiving is now part of the single nightly controller.
+  createTriggers();
 }
 
 function emailExtendedShiftReport() {
