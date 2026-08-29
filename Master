@@ -18,8 +18,29 @@ const REPORT_FONT_SIZE = Object.freeze({
   TABLE_BODY: 14,
   HIGHLIGHT: 10,
 });
-const REPORT_MINIMUM_ROWS = 500;
-const REPORT_ROW_BUFFER = 300;
+const FORM_DATA_COLUMNS = 11;
+const FORMATTING_RECOVERY_ROWS = 10;
+
+function getFormResponseLastRow(sheet) {
+  return Math.max(
+    1,
+    sheet
+      .getRange("A1")
+      .getNextDataCell(SpreadsheetApp.Direction.DOWN)
+      .getRow(),
+  );
+}
+
+function getFormResponseData(sheet) {
+  const lastRow = getFormResponseLastRow(sheet);
+  return sheet.getRange(1, 1, lastRow, FORM_DATA_COLUMNS).getValues();
+}
+
+function getDataSheetValues(sheet) {
+  return sheet.getName() === "Form Responses 1"
+    ? getFormResponseData(sheet)
+    : sheet.getDataRange().getValues();
+}
 
 function getAllEmployeeNamesFromSheet(data) {
   const employeeSet = new Set();
@@ -46,7 +67,7 @@ function getAllEmployeeNamesFromSheet(data) {
 function getReportData() {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
-  const data = sheet.getDataRange().getValues();
+  const data = getFormResponseData(sheet);
 
   const today = new Date();
   const todayStr = today.toDateString();
@@ -528,7 +549,7 @@ function searchVehicleHistory(plate) {
       return;
     }
 
-    const data = sheet.getDataRange().getValues();
+    const data = getDataSheetValues(sheet);
 
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
@@ -739,8 +760,9 @@ function buildOilDetailRows(oilMap, formatMoney) {
 }
 
 function getLastReportRow(sheet) {
+  const lastContentRow = Math.max(1, sheet.getLastRow());
   const values = sheet
-    .getRange(1, 13, sheet.getMaxRows(), 1)
+    .getRange(1, 13, lastContentRow, 1)
     .getDisplayValues();
 
   for (let i = values.length - 1; i >= 0; i--) {
@@ -753,7 +775,7 @@ function getLastReportRow(sheet) {
 function calc() {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
-  const data = sheet.getDataRange().getValues();
+  const data = getFormResponseData(sheet);
   const today = new Date();
   const todayStr = today.toDateString();
   const month = today.getMonth();
@@ -972,25 +994,11 @@ function calc() {
   }
 
   // Clear output
-  const requiredReportRows = Math.max(
-    REPORT_MINIMUM_ROWS,
-    data.length + REPORT_ROW_BUFFER + Object.keys(companyJobs).length * 4,
-  );
-  if (sheet.getMaxRows() < requiredReportRows) {
-    sheet.insertRowsAfter(
-      sheet.getMaxRows(),
-      requiredReportRows - sheet.getMaxRows(),
-    );
-  }
-  const reportRenderRange = sheet.getRange(
-    1,
-    13,
-    sheet.getMaxRows(),
-    6,
-  );
+  const reportRenderRows = getLastReportRow(sheet);
+  const reportRenderRange = sheet.getRange(1, 13, reportRenderRows, 6);
   reportRenderRange.clearContent().clearFormat();
   sheet
-    .getRange(1, 13, sheet.getMaxRows(), 6)
+    .getRange(1, 13, reportRenderRows, 6)
     .setFontFamily(REPORT_FONT_FAMILY)
     .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
@@ -1404,7 +1412,7 @@ function auditPriceChange(e) {
     const changeTime = new Date();
 
     // Re-locate the correct row in case sorting moved it
-    const allData = sheet.getDataRange().getValues();
+    const allData = getFormResponseData(sheet);
     let correctRow = row;
 
     for (let i = 1; i < allData.length; i++) {
@@ -1449,7 +1457,7 @@ function auditPriceChange(e) {
       newPrice = price;
     }
 
-    const data = sheet.getDataRange().getValues();
+    const data = getFormResponseData(sheet);
     let activeForeman = entryForeman;
 
     for (let i = 1; i < data.length; i++) {
@@ -1556,30 +1564,31 @@ function auditPriceChange(e) {
   }
 }
 
-function processFormSubmission() {
+function processFormSubmission(submittedRow) {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
-  const lastRow = sheet.getLastRow();
-  const dataLastCol = 11; // A–J
+  const lastRow = Math.max(
+    getFormResponseLastRow(sheet),
+    Number(submittedRow) || 1,
+  );
 
-  // 1. Sort only the data region (A–J), starting from row 2
+  // 1. Sort only the form-data region (A–K), starting from row 2.
   if (lastRow > 1) {
-    const sortRange = sheet.getRange(2, 1, lastRow - 1, dataLastCol);
+    const sortRange = sheet.getRange(2, 1, lastRow - 1, FORM_DATA_COLUMNS);
     sortRange.sort({ column: 1, ascending: false });
   }
 
-  // 2. APPLY TEMPLATE FORMATTING FROM ROW 1 T–AC → NEW ROW A–H
+  // 2. Reapply the template to the three newest rows. If an earlier trigger
+  // failed before formatting, the next successful submission repairs it.
 
   if (lastRow >= 2) {
     const templateRange = sheet.getRange(1, 20, 1, 11);
-    // Row 1, Column 20 = T
-    // 8 columns = T–AC
+    const formatThroughRow = Math.min(
+      lastRow,
+      1 + FORMATTING_RECOVERY_ROWS,
+    );
 
-    const targetRange = sheet.getRange(2, 1, 1, 11);
-    // Row 2, Column 1 = A
-    // 8 columns = A–H
-
-    templateRange.copyFormatToRange(sheet, 1, 11, 2, 2);
+    templateRange.copyFormatToRange(sheet, 1, 11, 2, formatThroughRow);
   }
 
   /*
@@ -1780,7 +1789,7 @@ function emailPerformanceReport(skipCalc) {
 function getMonthlyCompanyLogs(referenceDate) {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
-  const data = sheet.getDataRange().getValues();
+  const data = getFormResponseData(sheet);
   const targetMonth = referenceDate.getMonth();
   const targetYear = referenceDate.getFullYear();
   const companyLogs = {};
@@ -2061,8 +2070,8 @@ function cleanSlateProtocol() {
       sheet.getRange(2, 5, lastRow - 1, 1).setBackground(null); // Column E
       sheet.getRange(2, 6, lastRow - 1, 1).setBackground(null); // Column F
 
-      // ---- LIMIT TO 80 ROWS ----
-      const MAX_ROWS = 81; // Row 1 header + 80 rows
+      // ---- LIMIT TO 300 ROWS ----
+      const MAX_ROWS = 300; // Row 1 header + 299 rows
 
       if (sheet.getMaxRows() > MAX_ROWS) {
         sheet.deleteRows(MAX_ROWS + 1, sheet.getMaxRows() - MAX_ROWS);
@@ -2220,33 +2229,36 @@ function runNightlyOperations() {
   try {
     calc();
     saveDailyGraphSnapshot();
-    emailPerformanceReport(true);
-    if (TELEGRAM_ENABLED) saveYesterdaySnapshot();
-
-    const now = new Date();
-    const tomorrow = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1,
-    );
-
-    if (tomorrow.getMonth() !== now.getMonth()) {
-      let monthlyError = null;
-
-      try {
-        emailMonthlyReport(true);
-      } catch (err) {
-        monthlyError = err;
-        Logger.log("Monthly report failed: " + err);
-      } finally {
-        // Preserve the raw monthly archive even if attachment export fails.
-        duplicateSheetAtMonthEnd();
-      }
-
-      if (monthlyError) throw monthlyError;
-    }
   } finally {
     lock.releaseLock();
+  }
+
+  // Email exports and archive work can take considerably longer than sheet
+  // writes. They do not hold the submission lock.
+  emailPerformanceReport(true);
+  if (TELEGRAM_ENABLED) saveYesterdaySnapshot();
+
+  const now = new Date();
+  const tomorrow = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + 1,
+  );
+
+  if (tomorrow.getMonth() !== now.getMonth()) {
+    let monthlyError = null;
+
+    try {
+      emailMonthlyReport(true);
+    } catch (err) {
+      monthlyError = err;
+      Logger.log("Monthly report failed: " + err);
+    } finally {
+      // Preserve the raw monthly archive even if attachment export fails.
+      duplicateSheetAtMonthEnd();
+    }
+
+    if (monthlyError) throw monthlyError;
   }
 }
 function onFormSubmit(e) {
@@ -2254,7 +2266,7 @@ function onFormSubmit(e) {
   try {
     lock.waitLock(30000);
 
-    processFormSubmission();
+    processFormSubmission(e.range.getRow());
     calc();
 
     if (TELEGRAM_ENABLED) {
@@ -2364,7 +2376,7 @@ function getAllEmployeesList() {
       return;
     }
 
-    const data = sheet.getDataRange().getValues();
+    const data = getDataSheetValues(sheet);
 
     if (data.length < 2) return;
 
@@ -2409,7 +2421,7 @@ function getEmployeeMonths(employeeName) {
       return;
     }
 
-    const data = sheet.getDataRange().getValues();
+    const data = getDataSheetValues(sheet);
 
     if (data.length < 2) return;
 
@@ -2474,7 +2486,7 @@ function getEmployeeMonthlyPerformance(employeeName, monthKey) {
       return;
     }
 
-    const data = sheet.getDataRange().getValues();
+    const data = getDataSheetValues(sheet);
 
     if (data.length < 2) return;
 
@@ -2618,7 +2630,7 @@ function emailExtendedShiftReport() {
   const end = new Date(now);
   end.setHours(23, 59, 59, 999);
 
-  const data = sheet.getDataRange().getValues();
+  const data = getFormResponseData(sheet);
 
   // -------- MAPS --------
   const zeenahMap = {};
@@ -2830,15 +2842,16 @@ function emailExtendedShiftReport() {
   }
 
   // -------- RENDER REPORT --------
+  const extendedReportRenderRows = getLastReportRow(sheet);
   const extendedReportRange = sheet.getRange(
     1,
     13,
-    sheet.getMaxRows(),
+    extendedReportRenderRows,
     6,
   );
   extendedReportRange.clearContent().clearFormat();
   sheet
-    .getRange(1, 13, sheet.getMaxRows(), 6)
+    .getRange(1, 13, extendedReportRenderRows, 6)
     .setFontFamily(REPORT_FONT_FAMILY)
     .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
