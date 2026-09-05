@@ -772,6 +772,24 @@ function getLastReportRow(sheet) {
   return 1;
 }
 
+function clearReportRenderArea(sheet) {
+  const reportRenderRange = sheet.getRange(
+    1,
+    13,
+    sheet.getMaxRows(),
+    6,
+  );
+
+  // Content may already have been erased by the clean-slate protocol, so the
+  // previous report height can no longer be inferred from column M. Clear the
+  // entire dedicated report area, including merges and borders, before redraw.
+  reportRenderRange.breakApart();
+  reportRenderRange.clearContent().clearFormat();
+  reportRenderRange
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
+}
+
 function calc() {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -994,13 +1012,7 @@ function calc() {
   }
 
   // Clear output
-  const reportRenderRows = getLastReportRow(sheet);
-  const reportRenderRange = sheet.getRange(1, 13, reportRenderRows, 6);
-  reportRenderRange.clearContent().clearFormat();
-  sheet
-    .getRange(1, 13, reportRenderRows, 6)
-    .setFontFamily(REPORT_FONT_FAMILY)
-    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
+  clearReportRenderArea(sheet);
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
@@ -2062,6 +2074,10 @@ function cleanSlateProtocol() {
     const lastRow = sheet.getLastRow();
     const lastCol = sheet.getLastColumn();
 
+    if (name === "Form Responses 1") {
+      clearReportRenderArea(sheet);
+    }
+
     if (lastRow > 1) {
       // Clear content
       sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
@@ -2842,18 +2858,7 @@ function emailExtendedShiftReport() {
   }
 
   // -------- RENDER REPORT --------
-  const extendedReportRenderRows = getLastReportRow(sheet);
-  const extendedReportRange = sheet.getRange(
-    1,
-    13,
-    extendedReportRenderRows,
-    6,
-  );
-  extendedReportRange.clearContent().clearFormat();
-  sheet
-    .getRange(1, 13, extendedReportRenderRows, 6)
-    .setFontFamily(REPORT_FONT_FAMILY)
-    .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
+  clearReportRenderArea(sheet);
 
   const formatMoney = (amt) => `AED ${amt.toLocaleString("en-US")}`;
   let currentRow = 2;
