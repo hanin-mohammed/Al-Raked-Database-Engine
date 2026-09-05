@@ -2210,6 +2210,17 @@ function saveDailyGraphSnapshot() {
   historySheet.appendRow([today, monthKey, dayNumber, earnings, cars]);
 }
 
+function deleteAccidentalNumberedSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const accidentalSheetNamePattern = /^Sheet\d{2,3}$/;
+
+  ss.getSheets().forEach((sheet) => {
+    if (accidentalSheetNamePattern.test(sheet.getName())) {
+      zss.deleteSheet(sheet);
+    }
+  });
+}
+
 function createTriggers() {
   // Remove the old individual night triggers so they cannot overlap.
   const triggers = ScriptApp.getProjectTriggers();
@@ -2222,7 +2233,8 @@ function createTriggers() {
       funcName === "saveYesterdaySnapshot" ||
       funcName === "saveDailyGraphSnapshot" ||
       funcName === "duplicateSheetAtMonthEnd" ||
-      funcName === "runNightlyOperations"
+      funcName === "runNightlyOperations" ||
+      funcName === "deleteAccidentalNumberedSheets"
     ) {
       ScriptApp.deleteTrigger(t);
     }
@@ -2234,6 +2246,14 @@ function createTriggers() {
     .timeBased()
     .atHour(23)
     .nearMinute(30)
+    .everyDays(1)
+    .create();
+
+  // Remove only automatically named sheets such as Sheet12 or Sheet123.
+  ScriptApp.newTrigger("deleteAccidentalNumberedSheets")
+    .timeBased()
+    .atHour(4)
+    .nearMinute(0)
     .everyDays(1)
     .create();
 }
