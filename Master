@@ -1009,7 +1009,7 @@ function calc() {
   sheet
     .getRange(currentRow, 13, 1, 5)
     .merge()
-    .setValue("EARNINGS REPORT")
+    .setValue("AL RAKED EARNINGS REPORT")
     .setFontWeight("bold")
     .setFontSize(REPORT_FONT_SIZE.TITLE)
     .setFontFamily(REPORT_FONT_FAMILY)
