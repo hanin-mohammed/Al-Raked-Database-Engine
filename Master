@@ -1873,8 +1873,12 @@ function formatCompanyExportSheet(exportSheet, rows) {
   exportSheet.getRange(1, 1, 1, 6).setValues(headers);
   if (rows.length) exportSheet.getRange(2, 1, rows.length, 6).setValues(rows);
 
+  const totalRow = rows.length + 2;
+  const totalAmount = rows.reduce((sum, row) => sum + (Number(row[3]) || 0), 0);
+  exportSheet.getRange(totalRow, 3, 1, 2).setValues([["TOTAL", totalAmount]]);
+
   exportSheet
-    .getRange(1, 1, rows.length + 1, 6)
+    .getRange(1, 1, totalRow, 6)
     .setFontFamily(REPORT_FONT_FAMILY)
     .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
@@ -1900,6 +1904,12 @@ function formatCompanyExportSheet(exportSheet, rows) {
       .getRange(2, 4, rows.length, 1)
       .setNumberFormat('"AED" #,##0.00');
   }
+
+  exportSheet
+    .getRange(totalRow, 3, 1, 2)
+    .setFontWeight("bold")
+    .setBackground("#D9EAD3");
+  exportSheet.getRange(totalRow, 4).setNumberFormat('"AED" #,##0.00');
 
   exportSheet.getRange("A:B").setHorizontalAlignment("center");
   exportSheet.getRange("C:C").setHorizontalAlignment("left");
