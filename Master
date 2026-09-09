@@ -20,15 +20,23 @@ const REPORT_FONT_SIZE = Object.freeze({
 });
 const FORM_DATA_COLUMNS = 11;
 const FORMATTING_RECOVERY_ROWS = 10;
+const EMPLOYEE_MONTH_INDEX_SHEET = "EmployeeMonthIndex";
+const LOOKUP_EXCLUDED_SHEETS = Object.freeze([
+  "PriceAudit",
+  "MonthlyHistory",
+  EMPLOYEE_MONTH_INDEX_SHEET,
+]);
+const EMPLOYEE_ARCHIVE_START_KEY = "2025-08";
+
+function isLookupExcludedSheet(sheetName) {
+  return (
+    LOOKUP_EXCLUDED_SHEETS.includes(sheetName) ||
+    (sheetName || "").toString().startsWith("TEMP")
+  );
+}
 
 function getFormResponseLastRow(sheet) {
-  return Math.max(
-    1,
-    sheet
-      .getRange("A1")
-      .getNextDataCell(SpreadsheetApp.Direction.DOWN)
-      .getRow(),
-  );
+  return Math.max(1, sheet.getLastRow());
 }
 
 function getFormResponseData(sheet) {
@@ -444,15 +452,18 @@ function getReportData() {
     allEmployees: allEmployees,
   };
 }
-function updateTelegramCache() {
-  if (!TELEGRAM_ENABLED) return;
-
+function updateReportCache() {
   const data = getReportData();
 
   PropertiesService.getScriptProperties().setProperty(
     "TELEGRAM_REPORT_CACHE",
     JSON.stringify(data),
   );
+}
+
+// Retained for compatibility with any manual runs or older trigger setups.
+function updateTelegramCache() {
+  updateReportCache();
 }
 
 function saveYesterdaySnapshot() {
@@ -539,13 +550,15 @@ function searchVehicleHistory(plate) {
 
   const normalizedSearch = normalizePlate(plate);
 
+  if (!normalizedSearch) return [];
+
   const results = [];
 
   sheets.forEach((sheet) => {
     const name = sheet.getName();
 
     // Skip non-data sheets
-    if (name === "PriceAudit" || name.startsWith("TEMP")) {
+    if (isLookupExcludedSheet(name)) {
       return;
     }
 
@@ -556,7 +569,7 @@ function searchVehicleHistory(plate) {
 
       const plateValue = normalizePlate(row[3]);
 
-      if (plateValue === normalizedSearch) {
+      if (plateValue.includes(normalizedSearch)) {
         results.push({
           sheet: name,
           timestamp: row[0],
@@ -588,6 +601,17 @@ function normalizePlate(text) {
     .replace(/-/g, "");
 }
 
+function parseDashboardCache(value) {
+  if (!value) return {};
+
+  try {
+    return JSON.parse(value);
+  } catch (err) {
+    Logger.log("Dashboard cache could not be parsed: " + err);
+    return {};
+  }
+}
+
 function doGet(e) {
   const key = e.parameter.key;
 
@@ -599,10 +623,23 @@ function doGet(e) {
   const employeePerformance = e.parameter.employeePerformance;
   const month = e.parameter.month;
   const trend = e.parameter.trend;
+  const startup = e.parameter.startup;
 
   if (key !== "013187") {
     return ContentService.createTextOutput("Unauthorized").setMimeType(
       ContentService.MimeType.TEXT,
+    );
+  }
+
+  if (startup) {
+    const properties = PropertiesService.getScriptProperties();
+    const payload = {
+      report: parseDashboardCache(properties.getProperty("TELEGRAM_REPORT_CACHE")),
+      yesterday: parseDashboardCache(properties.getProperty("TELEGRAM_YESTERDAY_CACHE")),
+    };
+
+    return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(
+      ContentService.MimeType.JSON,
     );
   }
 
@@ -673,34 +710,62 @@ function getMonthlyTrendData(monthKey) {
   const monthIndex = Number(monthText) - 1;
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 
-  if (!historySheet || historySheet.getLastRow() < 2) {
-    return {
-      month: targetMonth,
-      daysInMonth: daysInMonth,
-      rows: [],
-    };
+  let rows = [];
+
+  if (historySheet && historySheet.getLastRow() > 1) {
+    const values = historySheet
+      .getRange(2, 1, historySheet.getLastRow() - 1, 5)
+      .getValues();
+
+    rows = values
+      .filter((row) => {
+        const monthVal = row[1];
+        const monthStr = monthVal instanceof Date
+          ? Utilities.formatDate(monthVal, tz, "yyyy-MM")
+          : String(monthVal);
+        return monthStr === targetMonth;
+      })
+      .map((row) => ({
+        date: row[0],
+        month: row[1],
+        day: row[2],
+        earnings: Number(row[3]) || 0,
+        cars: Number(row[4]) || 0,
+      }));
   }
 
-  const values = historySheet
-    .getRange(2, 1, historySheet.getLastRow() - 1, 5)
-    .getValues();
+  if (targetMonth === currentMonthKey) {
+    const cachedReport = PropertiesService.getScriptProperties().getProperty(
+      "TELEGRAM_REPORT_CACHE",
+    );
 
-  const rows = values
-    .filter((row) => {
-      const monthVal = row[1];
-      const monthStr = monthVal instanceof Date
-        ? Utilities.formatDate(monthVal, tz, "yyyy-MM")
-        : String(monthVal);
-      return monthStr === targetMonth;
-    })
-    .map((row) => ({
-      date: row[0],
-      month: row[1],
-      day: row[2],
-      earnings: Number(row[3]) || 0,
-      cars: Number(row[4]) || 0,
-    }))
-    .sort((a, b) => Number(a.day) - Number(b.day));
+    if (cachedReport) {
+      try {
+        const report = JSON.parse(cachedReport);
+        const todaySummary = report && report.summary && report.summary.today;
+
+        if (todaySummary) {
+          const todayRow = {
+            date: today,
+            month: currentMonthKey,
+            day: today.getDate(),
+            earnings: Number(todaySummary.earnings) || 0,
+            cars: Number(todaySummary.cars) || 0,
+          };
+          const existingTodayIndex = rows.findIndex(
+            (row) => Number(row.day) === todayRow.day,
+          );
+
+          if (existingTodayIndex >= 0) rows[existingTodayIndex] = todayRow;
+          else rows.push(todayRow);
+        }
+      } catch (err) {
+        Logger.log("Current trend cache could not be parsed: " + err);
+      }
+    }
+  }
+
+  rows.sort((a, b) => Number(a.day) - Number(b.day));
 
   return {
     month: targetMonth,
@@ -1381,7 +1446,7 @@ function calc() {
       sheet.getRange(startRow, 18, companyRows.length, 1).setWrap(true);
     });
 
-  updateTelegramCache();
+  updateReportCache();
 }
 
 function auditPriceChange(e) {
@@ -2072,6 +2137,10 @@ function cleanSlateProtocol() {
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const formResponseSheet = ss.getSheetByName("Form Responses 1");
+
+  // Capture the closing month's employees before Clean Slate removes its rows.
+  preserveClosingMonthEmployeeIndex(formResponseSheet, today, tz);
 
   const sheetsToReset = ["Form Responses 1", "PriceAudit"];
 
@@ -2181,7 +2250,20 @@ function saveDailyGraphSnapshot() {
     historySheet.hideSheet();
   }
 
-  const report = getReportData();
+  const cachedReport = PropertiesService.getScriptProperties().getProperty(
+    "TELEGRAM_REPORT_CACHE",
+  );
+  let report = null;
+
+  if (cachedReport) {
+    try {
+      report = JSON.parse(cachedReport);
+    } catch (err) {
+      Logger.log("Cached report could not be parsed: " + err);
+    }
+  }
+
+  if (!report) report = getReportData();
 
   const earnings = report.summary.today.earnings; // excluding company jobs
   const cars = report.summary.today.cars; // excluding company jobs
@@ -2226,17 +2308,20 @@ function deleteAccidentalNumberedSheets() {
 
   ss.getSheets().forEach((sheet) => {
     if (accidentalSheetNamePattern.test(sheet.getName())) {
-      zss.deleteSheet(sheet);
+      ss.deleteSheet(sheet);
     }
   });
 }
 
 function createTriggers() {
-  // Remove the old individual night triggers so they cannot overlap.
+  // Remove only managed triggers so rerunning setup cannot create duplicates.
   const triggers = ScriptApp.getProjectTriggers();
   for (const t of triggers) {
     const funcName = t.getHandlerFunction();
     if (
+      funcName === "onFormSubmit" ||
+      funcName === "auditPriceChange" ||
+      funcName === "cleanSlateProtocol" ||
       funcName === "calc" ||
       funcName === "emailPerformanceReport" ||
       funcName === "emailMonthlyReport" ||
@@ -2244,11 +2329,28 @@ function createTriggers() {
       funcName === "saveDailyGraphSnapshot" ||
       funcName === "duplicateSheetAtMonthEnd" ||
       funcName === "runNightlyOperations" ||
+      funcName === "sendNightlyPerformanceEmail" ||
       funcName === "deleteAccidentalNumberedSheets"
     ) {
       ScriptApp.deleteTrigger(t);
     }
   }
+
+  ScriptApp.newTrigger("onFormSubmit")
+    .forSpreadsheet(SpreadsheetApp.getActive())
+    .onFormSubmit()
+    .create();
+
+  ScriptApp.newTrigger("auditPriceChange")
+    .forSpreadsheet(SpreadsheetApp.getActive())
+    .onEdit()
+    .create();
+
+  ScriptApp.newTrigger("cleanSlateProtocol")
+    .timeBased()
+    .onMonthDay(1)
+    .atHour(2)
+    .create();
 
   // One trigger runs every night operation in a fixed sequence. The +/-15
   // minute window remains safely before midnight.
@@ -2268,6 +2370,25 @@ function createTriggers() {
     .create();
 }
 
+function scheduleNightlyPerformanceEmail(delayMinutes) {
+  const handler = "sendNightlyPerformanceEmail";
+
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (trigger.getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger(handler)
+    .timeBased()
+    .after(Math.max(1, Number(delayMinutes) || 1) * 60 * 1000)
+    .create();
+}
+
+function sendNightlyPerformanceEmail() {
+  emailPerformanceReport(true);
+}
+
 function runNightlyOperations() {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -2275,14 +2396,10 @@ function runNightlyOperations() {
   try {
     calc();
     saveDailyGraphSnapshot();
+    saveYesterdaySnapshot();
   } finally {
     lock.releaseLock();
   }
-
-  // Email exports and archive work can take considerably longer than sheet
-  // writes. They do not hold the submission lock.
-  emailPerformanceReport(true);
-  if (TELEGRAM_ENABLED) saveYesterdaySnapshot();
 
   const now = new Date();
   const tomorrow = new Date(
@@ -2290,8 +2407,13 @@ function runNightlyOperations() {
     now.getMonth(),
     now.getDate() + 1,
   );
+  const isMonthEnd = tomorrow.getMonth() !== now.getMonth();
 
-  if (tomorrow.getMonth() !== now.getMonth()) {
+  // PDF export receives a separate Apps Script execution allowance. On month
+  // end, leave more room for the monthly export and archive to finish first.
+  scheduleNightlyPerformanceEmail(isMonthEnd ? 15 : 1);
+
+  if (isMonthEnd) {
     let monthlyError = null;
 
     try {
@@ -2356,8 +2478,12 @@ function duplicateSheetAtMonthEnd() {
 
     const newName = `${shortMonth}'${shortYear}`;
 
-    // Avoid duplicate copies if script runs again
-    if (ss.getSheetByName(newName)) return;
+    // Avoid duplicate copies if script runs again, but still repair its index.
+    const existingArchive = ss.getSheetByName(newName);
+    if (existingArchive) {
+      refreshEmployeeMonthIndexFromArchive(existingArchive);
+      return;
+    }
 
     // ---- DUPLICATE SHEET ----
 
@@ -2400,6 +2526,8 @@ function duplicateSheetAtMonthEnd() {
     if (protection.canDomainEdit()) {
       protection.setDomainEdit(false);
     }
+
+    refreshEmployeeMonthIndexFromArchive(newSheet);
   }
 }
 
@@ -2407,47 +2535,247 @@ function duplicateSheetAtMonthEnd() {
 // EMPLOYEE PERFORMANCE API
 // ================================
 
-function getAllEmployeesList() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function getArchiveMonthDetails(sheetName) {
+  const archiveMatch = /^(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s*'(\d{2})$/i.exec(
+    (sheetName || "").toString().trim(),
+  );
 
-  const sheets = ss.getSheets();
+  if (!archiveMatch) return null;
 
+  const shortMonths = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const fullMonths = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  const shortMonth = archiveMatch[1].slice(0, 3).toLowerCase();
+  const monthIndex = shortMonths.findIndex(
+    (month) => month.toLowerCase() === shortMonth,
+  );
+  const fullYear = `20${archiveMatch[2]}`;
+
+  if (monthIndex < 0) return null;
+
+  const monthKey = `${fullYear}-${String(monthIndex + 1).padStart(2, "0")}`;
+  if (monthKey < EMPLOYEE_ARCHIVE_START_KEY) return null;
+
+  return {
+    monthKey,
+    monthLabel: `${fullMonths[monthIndex]} ${fullYear}`,
+  };
+}
+
+function getEmployeesFromSheet(sheet, monthKey) {
+  if (!sheet) return [];
+
+  const lastRow = getFormResponseLastRow(sheet);
+  if (lastRow < 2) return [];
+
+  const tz = Session.getScriptTimeZone();
   const employees = {};
+  const rows = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
 
-  sheets.forEach((sheet) => {
-    const sheetName = sheet.getName();
-
-    // Skip utility sheets
-    if (sheetName === "PriceAudit" || sheetName.startsWith("TEMP")) {
-      return;
+  rows.forEach((row) => {
+    if (monthKey) {
+      const timestamp = row[0] instanceof Date ? row[0] : new Date(row[0]);
+      if (isNaN(timestamp.getTime())) return;
+      if (Utilities.formatDate(timestamp, tz, "yyyy-MM") !== monthKey) return;
     }
 
-    const data = getDataSheetValues(sheet);
-
-    if (data.length < 2) return;
-
-    const headers = data[0].map((h) => h.toString().trim().toLowerCase());
-
-    // Find employee column dynamically
-    const employeeCol = headers.findIndex((h) => h.includes("employee"));
-
-    if (employeeCol === -1) return;
-
-    for (let i = 1; i < data.length; i++) {
-      const employeeCell = data[i][employeeCol];
-
-      if (!employeeCell) continue;
-
-      const names = employeeCell
-        .toString()
-        .split(/,|\s+/)
-        .map((e) => e.trim().toUpperCase())
-        .filter(Boolean);
-
-      names.forEach((name) => {
+    (row[2] || "")
+      .toString()
+      .split(/,|\s+/)
+      .map((name) => name.trim().toUpperCase())
+      .filter(Boolean)
+      .forEach((name) => {
         employees[name] = true;
       });
-    }
+  });
+
+  return Object.keys(employees).sort();
+}
+
+function ensureEmployeeMonthIndexSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(EMPLOYEE_MONTH_INDEX_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(EMPLOYEE_MONTH_INDEX_SHEET);
+    sheet
+      .getRange(1, 1, 1, 4)
+      .setValues([["Employee", "MonthKey", "MonthLabel", "UpdatedAt"]]);
+  }
+
+  if (!sheet.isSheetHidden()) sheet.hideSheet();
+  return sheet;
+}
+
+function writeEmployeeMonthIndexRows(indexSheet, rows) {
+  const existingLastRow = indexSheet.getLastRow();
+  if (existingLastRow > 1) {
+    indexSheet.getRange(2, 1, existingLastRow - 1, 4).clearContent();
+  }
+
+  if (rows.length) {
+    rows.sort(
+      (a, b) =>
+        String(b[1]).localeCompare(String(a[1])) ||
+        String(a[0]).localeCompare(String(b[0])),
+    );
+    indexSheet.getRange(2, 1, rows.length, 4).setValues(rows);
+  }
+
+  if (!indexSheet.isSheetHidden()) indexSheet.hideSheet();
+}
+
+function replaceEmployeeMonthIndexMonth(monthKey, monthLabelText, employees) {
+  const indexSheet = ensureEmployeeMonthIndexSheet();
+  const lastRow = indexSheet.getLastRow();
+  const existingRows = lastRow > 1
+    ? indexSheet.getRange(2, 1, lastRow - 1, 4).getValues()
+    : [];
+  const updatedAt = new Date();
+  const rows = existingRows
+    .filter((row) => String(row[1]) !== monthKey)
+    .concat(
+      employees.map((employee) => [
+        employee,
+        monthKey,
+        monthLabelText,
+        updatedAt,
+      ]),
+    );
+
+  writeEmployeeMonthIndexRows(indexSheet, rows);
+}
+
+function refreshEmployeeMonthIndexFromArchive(sheet) {
+  const details = sheet ? getArchiveMonthDetails(sheet.getName()) : null;
+  if (!details) return;
+
+  replaceEmployeeMonthIndexMonth(
+    details.monthKey,
+    details.monthLabel,
+    getEmployeesFromSheet(sheet, details.monthKey),
+  );
+}
+
+function rebuildEmployeeMonthIndex() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const indexSheet = ensureEmployeeMonthIndexSheet();
+  const updatedAt = new Date();
+  const rows = [];
+
+  ss.getSheets().forEach((sheet) => {
+    const details = getArchiveMonthDetails(sheet.getName());
+    if (!details) return;
+
+    getEmployeesFromSheet(sheet, details.monthKey).forEach((employee) => {
+      rows.push([employee, details.monthKey, details.monthLabel, updatedAt]);
+    });
+  });
+
+  writeEmployeeMonthIndexRows(indexSheet, rows);
+  return indexSheet;
+}
+
+function getEmployeeMonthIndexSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(EMPLOYEE_MONTH_INDEX_SHEET);
+  return sheet && sheet.getLastRow() > 1 ? sheet : rebuildEmployeeMonthIndex();
+}
+
+function preserveClosingMonthEmployeeIndex(sourceSheet, today, tz) {
+  const closingMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const monthKey = Utilities.formatDate(closingMonth, tz, "yyyy-MM");
+  const monthLabelText = Utilities.formatDate(closingMonth, tz, "MMMM yyyy");
+  const employees = getEmployeesFromSheet(sourceSheet, monthKey);
+
+  if (!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EMPLOYEE_MONTH_INDEX_SHEET)) {
+    rebuildEmployeeMonthIndex();
+  }
+
+  if (!employees.length) {
+    Logger.log("Employee month index kept unchanged: no closing-month rows found.");
+    return;
+  }
+
+  replaceEmployeeMonthIndexMonth(monthKey, monthLabelText, employees);
+}
+
+function isEmployeePerformanceSheet(sheetName) {
+  return (
+    sheetName === "Form Responses 1" ||
+    Boolean(getArchiveMonthDetails(sheetName))
+  );
+}
+
+function escapeTextFinderRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sheetContainsEmployee(sheet, employeeName) {
+  const lastRow = getFormResponseLastRow(sheet);
+  if (lastRow < 2) return false;
+
+  const employeePattern = `(^|[,\\s])${escapeTextFinderRegex(employeeName)}($|[,\\s])`;
+
+  return Boolean(
+    sheet
+      .getRange(2, 3, lastRow - 1, 1)
+      .createTextFinder(employeePattern)
+      .useRegularExpression(true)
+      .matchCase(false)
+      .findNext(),
+  );
+}
+
+function getAllEmployeesList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const indexSheet = getEmployeeMonthIndexSheet();
+  const employees = {};
+
+  if (indexSheet.getLastRow() > 1) {
+    indexSheet
+      .getRange(2, 1, indexSheet.getLastRow() - 1, 1)
+      .getDisplayValues()
+      .forEach((row) => {
+        if (row[0]) employees[row[0].toUpperCase()] = true;
+      });
+  }
+
+  const currentMonthKey = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone(),
+    "yyyy-MM",
+  );
+  getEmployeesFromSheet(
+    ss.getSheetByName("Form Responses 1"),
+    currentMonthKey,
+  ).forEach((name) => {
+    employees[name] = true;
   });
 
   return Object.keys(employees).sort();
@@ -2455,67 +2783,59 @@ function getAllEmployeesList() {
 
 function getEmployeeMonths(employeeName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  const sheets = ss.getSheets();
-
+  const indexSheet = getEmployeeMonthIndexSheet();
   const months = {};
+  const tz = Session.getScriptTimeZone();
+  const targetEmployee = employeeName.toString().trim().toUpperCase();
+  const now = new Date();
+  const currentMonthKey = Utilities.formatDate(now, tz, "yyyy-MM");
+  const currentMonthLabel = Utilities.formatDate(now, tz, "MMMM yyyy");
 
-  sheets.forEach((sheet) => {
-    const sheetName = sheet.getName();
+  if (indexSheet.getLastRow() > 1) {
+    indexSheet
+      .getRange(2, 1, indexSheet.getLastRow() - 1, 3)
+      .getDisplayValues()
+      .forEach((row) => {
+        if (String(row[0]).toUpperCase() === targetEmployee) {
+          months[row[1]] = row[2];
+        }
+      });
+  }
 
-    if (sheetName === "PriceAudit" || sheetName.startsWith("TEMP")) {
-      return;
-    }
-
-    const data = getDataSheetValues(sheet);
-
-    if (data.length < 2) return;
-
-    const headers = data[0].map((h) => h.toString().trim().toLowerCase());
-
-    const employeeCol = headers.findIndex((h) => h.includes("employee"));
-
-    if (employeeCol === -1) return;
-
-    for (let i = 1; i < data.length; i++) {
-      const timestamp = data[i][0];
-
-      const employeeCell = data[i][employeeCol];
-
-      if (!timestamp || !employeeCell) continue;
-
-      const names = employeeCell
-        .toString()
-        .split(/,|\s+/)
-        .map((e) => e.trim().toUpperCase());
-
-      if (!names.includes(employeeName.toUpperCase())) continue;
-
-      const date = new Date(timestamp);
-
-      const key = Utilities.formatDate(
-        date,
-        Session.getScriptTimeZone(),
-        "yyyy-MM",
-      );
-
-      const label = Utilities.formatDate(
-        date,
-        Session.getScriptTimeZone(),
-        "MMMM yyyy",
-      );
-
-      months[key] = label;
-    }
-  });
+  const currentSheet = ss.getSheetByName("Form Responses 1");
+  if (currentSheet && sheetContainsEmployee(currentSheet, targetEmployee)) {
+    months[currentMonthKey] = currentMonthLabel;
+  }
 
   return months;
 }
 
 function getEmployeeMonthlyPerformance(employeeName, monthKey) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = Session.getScriptTimeZone();
+  const currentMonthKey = Utilities.formatDate(new Date(), tz, "yyyy-MM");
+  let selectedSheet = null;
 
-  const sheets = ss.getSheets();
+  if (monthKey === currentMonthKey) {
+    selectedSheet = ss.getSheetByName("Form Responses 1");
+  } else {
+    const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthKey || "");
+
+    if (monthMatch) {
+      const sheets = ss.getSheets();
+
+      for (let i = 0; i < sheets.length; i++) {
+        const archiveDetails = getArchiveMonthDetails(sheets[i].getName());
+
+        if (archiveDetails && archiveDetails.monthKey === monthKey) {
+          selectedSheet = sheets[i];
+          break;
+        }
+      }
+    }
+  }
+
+  const sheets = selectedSheet ? [selectedSheet] : [];
 
   let totalCars = 0;
   let totalEarnings = 0;
@@ -2525,33 +2845,23 @@ function getEmployeeMonthlyPerformance(employeeName, monthKey) {
 
   const workedDays = {};
 
+  // Detailed sections used by the Al Raked dashboard employee lookup.
+  const companies = {};
+  const services = {};
+  let oilCars = 0;
+  let oilEarnings = 0;
+
   sheets.forEach((sheet) => {
-    const sheetName = sheet.getName();
-
-    if (sheetName === "PriceAudit" || sheetName.startsWith("TEMP")) {
-      return;
-    }
-
-    const data = getDataSheetValues(sheet);
+    const data = getFormResponseData(sheet);
 
     if (data.length < 2) return;
-
-    const headers = data[0].map((h) => h.toString().trim().toLowerCase());
-
-    const employeeCol = headers.findIndex((h) => h.includes("employee"));
-
-    const priceCol = headers.findIndex(
-      (h) => h.includes("service fee") || h.includes("price"),
-    );
-
-    if (employeeCol === -1) return;
 
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
 
       const timestamp = row[0];
 
-      const employeeCell = row[employeeCol];
+      const employeeCell = row[2];
 
       if (!timestamp || !employeeCell) continue;
 
@@ -2613,6 +2923,41 @@ function getEmployeeMonthlyPerformance(employeeName, monthKey) {
 
       workedDays[dayKey] = true;
 
+      const companyName = (row[6] || "").toString().trim();
+      if (companyName) {
+        if (!companies[companyName]) {
+          companies[companyName] = { cars: 0, earnings: 0 };
+        }
+        companies[companyName].cars++;
+        companies[companyName].earnings += splitAmt;
+      }
+
+      const oilName = (row[7] || "").toString().trim();
+      if (oilName) {
+        oilCars++;
+        oilEarnings += splitAmt;
+      }
+
+      const serviceList = (row[4] || "")
+        .toString()
+        .split(/\s*,\s*/)
+        .map((serviceName) => serviceName.trim().replace(/\s+/g, " "))
+        .filter(Boolean);
+      const serviceShare = serviceList.length > 0
+        ? splitAmt / serviceList.length
+        : splitAmt;
+
+      serviceList.forEach((serviceName) => {
+        const displayName = serviceName
+          .toLowerCase()
+          .replace(/\b\w/g, (character) => character.toUpperCase());
+        if (!services[displayName]) {
+          services[displayName] = { cars: 0, earnings: 0 };
+        }
+        services[displayName].cars++;
+        services[displayName].earnings += serviceShare;
+      });
+
       if (!firstDate || date < firstDate) {
         firstDate = date;
       }
@@ -2624,6 +2969,14 @@ function getEmployeeMonthlyPerformance(employeeName, monthKey) {
   });
 
   const daysWorked = Object.keys(workedDays).length;
+
+  if (oilCars > 0 || oilEarnings > 0) {
+    const existingOil = services.Oil || { cars: 0, earnings: 0 };
+    services.Oil = {
+      cars: existingOil.cars + oilCars,
+      earnings: existingOil.earnings + oilEarnings,
+    };
+  }
 
   return {
     employee: employeeName,
@@ -2638,6 +2991,10 @@ function getEmployeeMonthlyPerformance(employeeName, monthKey) {
     averageCarsPerDay: daysWorked > 0 ? totalCars / daysWorked : 0,
 
     averageEarningsPerDay: daysWorked > 0 ? totalEarnings / daysWorked : 0,
+
+    companies: companies,
+
+    services: services,
 
     firstWork: firstDate
       ? Utilities.formatDate(
