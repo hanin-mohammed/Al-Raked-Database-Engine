@@ -6,7 +6,7 @@ const TELEGRAM_CHANNEL_ID = "-1003868639331";
 const TELEGRAM_ENABLED = false;
 
 // REPORT TYPOGRAPHY: edit only these values to restyle every report/export.
-const REPORT_FONT_FAMILY = "Red Hat Display";
+const REPORT_FONT_FAMILY = "Atkinson Hyperlegible Next";
 const REPORT_FONT_SIZE = Object.freeze({
   TITLE: 18,
   TIMESTAMP: 10,
@@ -16,7 +16,7 @@ const REPORT_FONT_SIZE = Object.freeze({
   SECTION_TITLE: 16,
   TABLE_HEADER: 10,
   TABLE_BODY: 14,
-  HIGHLIGHT: 10,
+  HIGHLIGHT: 14,
 });
 const FORM_DATA_COLUMNS = 11;
 const FORMATTING_RECOVERY_ROWS = 10;
@@ -27,6 +27,13 @@ const LOOKUP_EXCLUDED_SHEETS = Object.freeze([
   EMPLOYEE_MONTH_INDEX_SHEET,
 ]);
 const EMPLOYEE_ARCHIVE_START_KEY = "2025-08";
+const REPORT_PIPELINE_STATE_PROPERTY = "AL_RAKED_REPORT_PIPELINE_V3";
+const REPORT_PIPELINE_ACTIVE_PREFIX = "AL_RAKED_CLOSEOUT_ACTIVE_";
+const REPORT_PIPELINE_DAILY_SENT_PREFIX = "AL_RAKED_DAILY_SENT_";
+const REPORT_PIPELINE_MONTHLY_SENT_PREFIX = "AL_RAKED_MONTHLY_SENT_";
+const REPORT_PIPELINE_CLEAN_SENT_PREFIX = "AL_RAKED_CLEAN_SENT_";
+const REPORT_PIPELINE_TEMP_FOLDER_PROPERTY = "AL_RAKED_TEMP_FOLDER_ID";
+const REPORT_PIPELINE_TEMP_FOLDER_NAME = "_Al Raked Automation Temporary Files";
 
 function isLookupExcludedSheet(sheetName) {
   return (
@@ -855,6 +862,34 @@ function clearReportRenderArea(sheet) {
     .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 }
 
+function formatReportTimestamp(updatedAt) {
+  return (
+    "Last Updated: " +
+    Utilities.formatDate(
+      updatedAt,
+      Session.getScriptTimeZone(),
+      "dd MMM yyyy HH:mm:ss",
+    )
+  );
+}
+
+function refreshReportTimestamp() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+    "Form Responses 1",
+  );
+
+  if (!sheet) return;
+
+  // Do not overwrite row 3 while a different report is temporarily rendered.
+  const reportTitle = sheet.getRange(2, 13).getDisplayValue();
+  if (reportTitle !== "AL RAKED EARNINGS REPORT") return;
+
+  // M3 is the existing merged timestamp cell. Updating it does not rebuild the
+  // report, recalculate earnings, or alter the dashboard/API payload.
+  sheet.getRange(3, 13).setValue(formatReportTimestamp(new Date()));
+  SpreadsheetApp.flush();
+}
+
 function calc() {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -1084,7 +1119,7 @@ function calc() {
 
   // HEADER
   sheet
-    .getRange(currentRow, 13, 1, 5)
+    .getRange(currentRow, 13, 1, 6)
     .merge()
     .setValue("AL RAKED EARNINGS REPORT")
     .setFontWeight("bold")
@@ -1093,16 +1128,9 @@ function calc() {
     .setHorizontalAlignment("center");
   currentRow++;
   sheet
-    .getRange(currentRow, 13, 1, 5)
+    .getRange(currentRow, 13, 1, 6)
     .merge()
-    .setValue(
-      "Last Updated: " +
-        Utilities.formatDate(
-          new Date(),
-          Session.getScriptTimeZone(),
-          "dd MMM yyyy HH:mm:ss",
-        ),
-    )
+    .setValue(formatReportTimestamp(new Date()))
     .setFontSize(REPORT_FONT_SIZE.TIMESTAMP)
     .setFontFamily(REPORT_FONT_FAMILY)
     .setHorizontalAlignment("center");
@@ -1110,7 +1138,7 @@ function calc() {
 
   // SUMMARY HEADING
   sheet
-    .getRange(currentRow, 13, 1, 5)
+    .getRange(currentRow, 13, 1, 6)
     .merge()
     .setValue("DAILY & MONTHLY SUMMARY")
     .setFontWeight("bold")
@@ -1139,16 +1167,16 @@ function calc() {
   currentRow++;
 
   const summaryDataExcl = [
-    ["Earnings Today", formatMoney(totalTodayExcl)],
-    ["Cars Washed Today", carsTodayExcl],
-    ["Monthly Earnings", formatMoney(totalMonthExcl)],
-    ["Cars Washed this Month", carsMonthExcl],
+    ["Today", formatMoney(totalTodayExcl)],
+    ["Cars Today", carsTodayExcl],
+    ["This Month", formatMoney(totalMonthExcl)],
+    ["Cars This Month", carsMonthExcl],
   ];
   const summaryDataIncl = [
-    ["Earnings Today", formatMoney(totalTodayIncl)],
-    ["Cars Washed Today", carsTodayIncl],
-    ["Monthly Earnings", formatMoney(totalMonthIncl)],
-    ["Cars Washed this Month", carsMonthIncl],
+    ["Today", formatMoney(totalTodayIncl)],
+    ["Cars Today", carsTodayIncl],
+    ["This Month", formatMoney(totalMonthIncl)],
+    ["Cars This Month", carsMonthIncl],
   ];
 
   // Left table
@@ -1248,7 +1276,7 @@ function calc() {
     }
   }
   sheet
-    .getRange(currentRow, 13, 1, 5)
+    .getRange(currentRow, 13, 1, 6)
     .merge()
     .setValue(`Top Performer This Month: ${topEmp} (${topCars} VEHICLES)`)
     .setFontWeight("bold")
@@ -1262,13 +1290,16 @@ function calc() {
     (a, b) => empMap[b].carsToday - empMap[a].carsToday,
   );
   const now = new Date();
+  const inactiveEmployeeRows = [];
 
   const empRows = empList.map((name) => {
     let lastWorkText = "No work today";
+    let inactiveOverThirtyMinutes = false;
 
     if (empLastWorkToday[name]) {
       const last = empLastWorkToday[name];
       const diffMinutes = Math.floor((now - last) / 60000);
+      inactiveOverThirtyMinutes = diffMinutes > 30;
       const time = Utilities.formatDate(
         last,
         Session.getScriptTimeZone(),
@@ -1288,8 +1319,11 @@ function calc() {
       lastWorkText = `${timeText} ago (${time})`;
     }
 
+    inactiveEmployeeRows.push(inactiveOverThirtyMinutes);
+
     return [
-      `${name} · ${lastWorkText}`,
+      name,
+      lastWorkText,
       formatMoney(empMap[name].daily),
       empMap[name].carsToday,
       formatMoney(empMap[name].monthly),
@@ -1297,17 +1331,30 @@ function calc() {
     ];
   });
 
+  const employeeDataStartRow = currentRow + 2;
   writeTable(
     "EMPLOYEE PERFORMANCE",
     [
       "NAME",
+      "LAST WORKED",
       "EARNINGS TODAY",
       "CARS TODAY",
       "EARNINGS THIS MONTH",
       "CARS THIS MONTH",
     ],
     empRows,
+    [0, 1],
   );
+
+  const inactiveStatusCells = inactiveEmployeeRows
+    .map((isInactive, index) =>
+      isInactive ? `N${employeeDataStartRow + index}` : null,
+    )
+    .filter(Boolean);
+
+  if (inactiveStatusCells.length) {
+    sheet.getRangeList(inactiveStatusCells).setBackground("#f4cccc");
+  }
 
   // Foreman
   const foremanList = Object.keys(foremanMap).sort(
@@ -2330,6 +2377,11 @@ function createTriggers() {
       funcName === "duplicateSheetAtMonthEnd" ||
       funcName === "runNightlyOperations" ||
       funcName === "sendNightlyPerformanceEmail" ||
+      funcName === "runReportPipelineWorker" ||
+      funcName === "runReportPipelineWatchdog" ||
+      funcName === "refreshReportTimestamp" ||
+      funcName === "runMonthlyCleanSlateCheck" ||
+      funcName === "runDeferredCleanSlate" ||
       funcName === "deleteAccidentalNumberedSheets"
     ) {
       ScriptApp.deleteTrigger(t);
@@ -2346,7 +2398,7 @@ function createTriggers() {
     .onEdit()
     .create();
 
-  ScriptApp.newTrigger("cleanSlateProtocol")
+  ScriptApp.newTrigger("runMonthlyCleanSlateCheck")
     .timeBased()
     .onMonthDay(1)
     .atHour(2)
@@ -2361,6 +2413,18 @@ function createTriggers() {
     .everyDays(1)
     .create();
 
+  // Resumes an interrupted report stage after an Apps Script hard timeout.
+  ScriptApp.newTrigger("runReportPipelineWatchdog")
+    .timeBased()
+    .everyMinutes(10)
+    .create();
+
+  // Keep the visible freshness marker current without rebuilding the report.
+  ScriptApp.newTrigger("refreshReportTimestamp")
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+
   // Remove only automatically named sheets such as Sheet12 or Sheet123.
   ScriptApp.newTrigger("deleteAccidentalNumberedSheets")
     .timeBased()
@@ -2371,7 +2435,11 @@ function createTriggers() {
 }
 
 function scheduleNightlyPerformanceEmail(delayMinutes) {
-  const handler = "sendNightlyPerformanceEmail";
+  scheduleReportPipelineWorker(delayMinutes);
+}
+
+function scheduleReportPipelineWorker(delayMinutes) {
+  const handler = "runReportPipelineWorker";
 
   ScriptApp.getProjectTriggers().forEach((trigger) => {
     if (trigger.getHandlerFunction() === handler) {
@@ -2386,7 +2454,7 @@ function scheduleNightlyPerformanceEmail(delayMinutes) {
 }
 
 function sendNightlyPerformanceEmail() {
-  emailPerformanceReport(true);
+  runReportPipelineWorker();
 }
 
 function runNightlyOperations() {
@@ -2409,25 +2477,706 @@ function runNightlyOperations() {
   );
   const isMonthEnd = tomorrow.getMonth() !== now.getMonth();
 
-  // PDF export receives a separate Apps Script execution allowance. On month
-  // end, leave more room for the monthly export and archive to finish first.
-  scheduleNightlyPerformanceEmail(isMonthEnd ? 15 : 1);
+  if (isMonthEnd) {
+    // Protect the raw month before any export work begins.
+    duplicateSheetAtMonthEnd();
+  }
+
+  initializeReportPipeline(now, isMonthEnd);
+  scheduleReportPipelineWorker(1);
+}
+
+function getReportPipelineState() {
+  const value = PropertiesService.getScriptProperties().getProperty(
+    REPORT_PIPELINE_STATE_PROPERTY,
+  );
+
+  if (!value) return null;
+
+  try {
+    return JSON.parse(value);
+  } catch (err) {
+    throw new Error("Stored report pipeline state is invalid: " + err);
+  }
+}
+
+function saveReportPipelineState(state) {
+  PropertiesService.getScriptProperties().setProperty(
+    REPORT_PIPELINE_STATE_PROPERTY,
+    JSON.stringify(state),
+  );
+}
+
+function clearReportPipelineState() {
+  PropertiesService.getScriptProperties().deleteProperty(
+    REPORT_PIPELINE_STATE_PROPERTY,
+  );
+}
+
+function reportPipelineDateKey(date) {
+  return Utilities.formatDate(
+    date,
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd",
+  );
+}
+
+function reportPipelineMonthKey(date) {
+  return Utilities.formatDate(
+    date,
+    Session.getScriptTimeZone(),
+    "yyyy-MM",
+  );
+}
+
+function getReportPipelineArchiveName(date) {
+  const tz = Session.getScriptTimeZone();
+  return (
+    Utilities.formatDate(date, tz, "MMM") +
+    "'" +
+    Utilities.formatDate(date, tz, "yy")
+  );
+}
+
+function initializeReportPipeline(referenceDate, isMonthEnd) {
+  const existing = getReportPipelineState();
+  const dateKey = reportPipelineDateKey(referenceDate);
+
+  if (existing) {
+    if (existing.dateKey === dateKey) return;
+
+    throw new Error(
+      `The report pipeline for ${existing.dateKey} is still incomplete. ` +
+        "It was preserved instead of being overwritten.",
+    );
+  }
+
+  const monthKey = reportPipelineMonthKey(referenceDate);
+  const state = {
+    version: 3,
+    dateKey: dateKey,
+    monthKey: monthKey,
+    referenceIso: referenceDate.toISOString(),
+    isMonthEnd: Boolean(isMonthEnd),
+    stage: "DAILY_MAIN_PDF",
+    attempts: 0,
+    dailyMainFileId: "",
+    dailyAuditFileId: "",
+    dailyAuditText: "No price changes recorded today.",
+    monthlyPdfFileId: "",
+    monthlyPdfFileName: "",
+    companyNames: [],
+    companyIndex: 0,
+    companyFiles: [],
+    activeTempSpreadsheetId: "",
+    cleanupFileIds: [],
+  };
+
+  saveReportPipelineState(state);
 
   if (isMonthEnd) {
-    let monthlyError = null;
+    PropertiesService.getScriptProperties().setProperty(
+      REPORT_PIPELINE_ACTIVE_PREFIX + monthKey,
+      "YES",
+    );
+  }
+}
+
+function reportPipelineFetchOptions() {
+  return {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true,
+  };
+}
+
+function getReportPipelineTempFolder() {
+  const properties = PropertiesService.getScriptProperties();
+  const storedId = properties.getProperty(
+    REPORT_PIPELINE_TEMP_FOLDER_PROPERTY,
+  );
+
+  if (storedId) {
+    try {
+      return DriveApp.getFolderById(storedId);
+    } catch (err) {
+      Logger.log("Stored temporary folder was unavailable: " + err);
+    }
+  }
+
+  const matchingFolders = DriveApp.getFoldersByName(
+    REPORT_PIPELINE_TEMP_FOLDER_NAME,
+  );
+  const folder = matchingFolders.hasNext()
+    ? matchingFolders.next()
+    : DriveApp.createFolder(REPORT_PIPELINE_TEMP_FOLDER_NAME);
+
+  properties.setProperty(REPORT_PIPELINE_TEMP_FOLDER_PROPERTY, folder.getId());
+  return folder;
+}
+
+function rememberReportPipelineFile(state, file) {
+  state.cleanupFileIds = state.cleanupFileIds || [];
+  if (!state.cleanupFileIds.includes(file.getId())) {
+    state.cleanupFileIds.push(file.getId());
+  }
+  saveReportPipelineState(state);
+  return file.getId();
+}
+
+function trashReportPipelineFile(fileId) {
+  if (!fileId) return;
+
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (err) {
+    Logger.log(`Temporary file cleanup failed for ${fileId}: ${err}`);
+  }
+}
+
+function cleanupUntrackedReportPipelineFiles(state) {
+  const keepIds = new Set((state && state.cleanupFileIds) || []);
+  const files = getReportPipelineTempFolder().getFiles();
+
+  while (files.hasNext()) {
+    const file = files.next();
+    if (!keepIds.has(file.getId())) file.setTrashed(true);
+  }
+}
+
+function cleanupInterruptedCompanySpreadsheet(state) {
+  if (!state.activeTempSpreadsheetId) return;
+
+  trashReportPipelineFile(state.activeTempSpreadsheetId);
+  state.activeTempSpreadsheetId = "";
+  saveReportPipelineState(state);
+}
+
+function createDailyMainPdfStage(state, referenceDate) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Form Responses 1");
+  const tz = Session.getScriptTimeZone();
+  const fileDate = Utilities.formatDate(
+    referenceDate,
+    tz,
+    "MMMM d yyyy",
+  ).replace(/ /g, "_");
+  const fileName = `${fileDate}_Al_Raked_Performance_Report.pdf`;
+  const exportUrl =
+    `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+    `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+    `&pagenumbers=false&gridlines=false&fzr=false&gid=${sheet.getSheetId()}`;
+  const response = UrlFetchApp.fetch(exportUrl, reportPipelineFetchOptions());
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error("Main PDF export failed.");
+  }
+
+  const file = getReportPipelineTempFolder().createFile(
+    response.getBlob().setName(fileName),
+  );
+  state.dailyMainFileId = rememberReportPipelineFile(state, file);
+  state.stage = "DAILY_AUDIT_PDF";
+  state.attempts = 0;
+  saveReportPipelineState(state);
+}
+
+function createDailyAuditPdfStage(state, referenceDate) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const auditSheet = ss.getSheetByName("PriceAudit");
+  const tz = Session.getScriptTimeZone();
+  const fileDate = Utilities.formatDate(
+    referenceDate,
+    tz,
+    "MMMM d yyyy",
+  ).replace(/ /g, "_");
+  const auditData = auditSheet.getDataRange().getValues();
+  const rowsForDate = [];
+
+  for (let i = 1; i < auditData.length; i++) {
+    const changeTime = auditData[i][0];
+    if (!changeTime) continue;
+
+    if (reportPipelineDateKey(new Date(changeTime)) === state.dateKey) {
+      rowsForDate.push(auditData[i].slice(0, 10));
+    }
+  }
+
+  state.dailyAuditText = "No price changes recorded today.";
+
+  if (rowsForDate.length) {
+    const tempName = "TEMP_AUDIT_EXPORT";
+    const existing = ss.getSheetByName(tempName);
+    if (existing) ss.deleteSheet(existing);
+
+    const temp = ss.insertSheet(tempName);
 
     try {
-      emailMonthlyReport(true);
-    } catch (err) {
-      monthlyError = err;
-      Logger.log("Monthly report failed: " + err);
+      auditSheet.getRange(1, 1, 1, 10).copyTo(temp.getRange(1, 1));
+      temp.getRange(1, 1, 1, 10).setFontColor("white");
+      temp.getRange(2, 1, rowsForDate.length, 10).setValues(rowsForDate);
+      temp.getRange(2, 1, rowsForDate.length, 10).setFontColor("black");
+      SpreadsheetApp.flush();
+
+      const auditUrl =
+        `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+        `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+        `&pagenumbers=false&gridlines=true&fzr=false&gid=${temp.getSheetId()}`;
+      const response = UrlFetchApp.fetch(
+        auditUrl,
+        reportPipelineFetchOptions(),
+      );
+
+      if (response.getResponseCode() === 200) {
+        const fileName = `${fileDate}_Price_Audit.pdf`;
+        const file = getReportPipelineTempFolder().createFile(
+          response.getBlob().setName(fileName),
+        );
+        state.dailyAuditFileId = rememberReportPipelineFile(state, file);
+        state.dailyAuditText = `${rowsForDate.length} price change(s) recorded today.`;
+      }
     } finally {
-      // Preserve the raw monthly archive even if attachment export fails.
-      duplicateSheetAtMonthEnd();
+      const tempToDelete = ss.getSheetByName(tempName);
+      if (tempToDelete) ss.deleteSheet(tempToDelete);
+    }
+  }
+
+  state.stage = "DAILY_SEND";
+  state.attempts = 0;
+  saveReportPipelineState(state);
+}
+
+function sendDailyReportStage(state, referenceDate) {
+  const tz = Session.getScriptTimeZone();
+  const subjectDate = Utilities.formatDate(referenceDate, tz, "MMMM d, yyyy");
+  const fileDate = Utilities.formatDate(
+    referenceDate,
+    tz,
+    "MMMM d yyyy",
+  ).replace(/ /g, "_");
+  const attachments = [
+    DriveApp.getFileById(state.dailyMainFileId)
+      .getBlob()
+      .setName(`${fileDate}_Al_Raked_Performance_Report.pdf`),
+  ];
+
+  if (state.dailyAuditFileId) {
+    attachments.push(
+      DriveApp.getFileById(state.dailyAuditFileId)
+        .getBlob()
+        .setName(`${fileDate}_Price_Audit.pdf`),
+    );
+  }
+
+  MailApp.sendEmail({
+    to: "alrakedcarwashingstation@gmail.com,Humaid.almessabi@gmail.com",
+    subject: `${subjectDate} - Al Raked Performance Report`,
+    body: "Daily operational report attached.\n\n" + state.dailyAuditText,
+    attachments: attachments,
+  });
+
+  PropertiesService.getScriptProperties().setProperty(
+    REPORT_PIPELINE_DAILY_SENT_PREFIX + state.dateKey,
+    "YES",
+  );
+
+  // The daily attachments are no longer needed after the email is accepted.
+  // Remove them before the longer month-end stages begin.
+  const dailyFileIds = [state.dailyMainFileId, state.dailyAuditFileId].filter(
+    Boolean,
+  );
+  dailyFileIds.forEach(trashReportPipelineFile);
+  state.cleanupFileIds = (state.cleanupFileIds || []).filter(
+    (fileId) => !dailyFileIds.includes(fileId),
+  );
+  state.dailyMainFileId = "";
+  state.dailyAuditFileId = "";
+
+  state.stage = state.isMonthEnd ? "MONTHLY_MAIN_PDF" : "CLEANUP";
+  state.attempts = 0;
+  saveReportPipelineState(state);
+}
+
+function createMonthlyMainPdfStage(state, referenceDate) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Form Responses 1");
+  const tz = Session.getScriptTimeZone();
+  const monthName = Utilities.formatDate(referenceDate, tz, "MMMM yyyy");
+  const fileDate = Utilities.formatDate(referenceDate, tz, "MMMM_yyyy");
+  const reportSheetName = "TEMP_MONTHLY_REPORT";
+  const existingReport = ss.getSheetByName(reportSheetName);
+  const legacyLog = ss.getSheetByName("TEMP_PRIVATE_LOG");
+  if (existingReport) ss.deleteSheet(existingReport);
+  if (legacyLog) ss.deleteSheet(legacyLog);
+
+  const tempReport = ss.insertSheet(reportSheetName);
+
+  try {
+    const reportLastRow = getLastReportRow(sheet);
+    if (tempReport.getMaxRows() < reportLastRow) {
+      tempReport.insertRowsAfter(
+        tempReport.getMaxRows(),
+        reportLastRow - tempReport.getMaxRows(),
+      );
     }
 
-    if (monthlyError) throw monthlyError;
+    sheet
+      .getRange(1, 13, reportLastRow, 6)
+      .copyTo(tempReport.getRange("A1"), { contentsOnly: false });
+    tempReport.setColumnWidths(1, 6, 140);
+    tempReport.setColumnWidth(1, 260);
+    tempReport.getRange(1, 1, reportLastRow, 6).setWrap(true);
+    tempReport.setFrozenRows(2);
+    tempReport.getRange("A2").setValue(`AL RAKED EARNINGS REPORT ${monthName}`);
+
+    const reportValues = tempReport.getDataRange().getValues();
+    for (let i = 0; i < reportValues.length; i++) {
+      const title = (reportValues[i][0] || "").toString().trim();
+      if (title.endsWith(" VEHICLE LOG")) {
+        tempReport.deleteRows(i + 1, reportValues.length - i);
+        break;
+      }
+    }
+
+    SpreadsheetApp.flush();
+    const pdfUrl =
+      `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=pdf` +
+      `&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false` +
+      `&pagenumbers=false&gridlines=false&fzr=false&gid=${tempReport.getSheetId()}`;
+    const response = UrlFetchApp.fetch(pdfUrl, reportPipelineFetchOptions());
+
+    if (response.getResponseCode() !== 200) {
+      throw new Error("Monthly earnings PDF export failed.");
+    }
+
+    state.monthlyPdfFileName = `Al_Raked_Earnings_Report_${fileDate}.pdf`;
+    const file = getReportPipelineTempFolder().createFile(
+      response.getBlob().setName(state.monthlyPdfFileName),
+    );
+    state.monthlyPdfFileId = rememberReportPipelineFile(state, file);
+
+    const companyLogs = getMonthlyCompanyLogs(referenceDate);
+    state.companyNames = Object.keys(companyLogs).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    state.companyIndex = 0;
+    state.companyFiles = [];
+    state.stage = state.companyNames.length
+      ? "MONTHLY_COMPANY_FILE"
+      : "MONTHLY_SEND";
+    state.attempts = 0;
+    saveReportPipelineState(state);
+  } finally {
+    const reportTab = ss.getSheetByName(reportSheetName);
+    if (reportTab) ss.deleteSheet(reportTab);
   }
+}
+
+function createMonthlyCompanyFileStage(state, referenceDate) {
+  cleanupInterruptedCompanySpreadsheet(state);
+
+  if (state.companyIndex >= state.companyNames.length) {
+    state.stage = "MONTHLY_SEND";
+    saveReportPipelineState(state);
+    return;
+  }
+
+  const companyName = state.companyNames[state.companyIndex];
+  const companyLogs = getMonthlyCompanyLogs(referenceDate);
+  const rows = companyLogs[companyName];
+
+  if (!rows) {
+    throw new Error(`Company data disappeared before export: ${companyName}`);
+  }
+
+  const safeCompanyName = safeFilePart(companyName);
+  const fileDate = Utilities.formatDate(
+    referenceDate,
+    Session.getScriptTimeZone(),
+    "MMMM_yyyy",
+  );
+  const tempSpreadsheet = SpreadsheetApp.create(
+    `TEMP_${safeCompanyName}_LOG_EXPORT`,
+  );
+  state.activeTempSpreadsheetId = tempSpreadsheet.getId();
+  saveReportPipelineState(state);
+
+  try {
+    const exportSheet = tempSpreadsheet.getSheets()[0];
+    exportSheet.setName("Company Log");
+    formatCompanyExportSheet(exportSheet, rows);
+    SpreadsheetApp.flush();
+
+    const xlsxUrl =
+      `https://docs.google.com/spreadsheets/d/${tempSpreadsheet.getId()}` +
+      "/export?format=xlsx";
+    const response = UrlFetchApp.fetch(
+      xlsxUrl,
+      reportPipelineFetchOptions(),
+    );
+
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`Excel export failed for ${companyName}.`);
+    }
+
+    const fileName = `${safeCompanyName}_Log_${fileDate}.xlsx`;
+    const file = getReportPipelineTempFolder().createFile(
+      response.getBlob().setName(fileName),
+    );
+    const fileId = rememberReportPipelineFile(state, file);
+    state.companyFiles.push({
+      companyName: companyName,
+      fileName: fileName,
+      fileId: fileId,
+    });
+    state.companyIndex++;
+    state.stage =
+      state.companyIndex < state.companyNames.length
+        ? "MONTHLY_COMPANY_FILE"
+        : "MONTHLY_SEND";
+    state.attempts = 0;
+    saveReportPipelineState(state);
+  } finally {
+    trashReportPipelineFile(tempSpreadsheet.getId());
+    state.activeTempSpreadsheetId = "";
+    saveReportPipelineState(state);
+  }
+}
+
+function sendMonthlyReportStage(state, referenceDate) {
+  const tz = Session.getScriptTimeZone();
+  const monthName = Utilities.formatDate(referenceDate, tz, "MMMM yyyy");
+  const attachments = [
+    DriveApp.getFileById(state.monthlyPdfFileId)
+      .getBlob()
+      .setName(state.monthlyPdfFileName),
+  ];
+
+  state.companyFiles.forEach((companyFile) => {
+    attachments.push(
+      DriveApp.getFileById(companyFile.fileId)
+        .getBlob()
+        .setName(companyFile.fileName),
+    );
+  });
+
+  const companyListText = state.companyNames.length
+    ? state.companyNames
+        .map((name, index) => `${index + 2}. ${name} vehicle log (Excel)`)
+        .join("\n")
+    : "2. No company vehicle logs were recorded this month.";
+
+  MailApp.sendEmail({
+    to: "imhaninmohd@gmail.com, alrakedcarwashingstation@gmail.com, Humaid.almessabi@gmail.com",
+    subject: `Al Raked Monthly Earnings Report - ${monthName}`,
+    body:
+      "Sir,\n\n" +
+      `Monthly consolidation complete for ${monthName}.\n\n` +
+      "Included in this transmission:\n" +
+      "1. Earnings performance report (PDF)\n" +
+      companyListText +
+      "\n\nAll data has been structured, validated and archived.\n" +
+      "Please review at your convenience.",
+    attachments: attachments,
+  });
+
+  PropertiesService.getScriptProperties().setProperty(
+    REPORT_PIPELINE_MONTHLY_SENT_PREFIX + state.monthKey,
+    "YES",
+  );
+  state.stage = "CLEANUP";
+  state.attempts = 0;
+  saveReportPipelineState(state);
+}
+
+function cleanupReportPipelineStage(state) {
+  cleanupInterruptedCompanySpreadsheet(state);
+
+  (state.cleanupFileIds || []).forEach(trashReportPipelineFile);
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ["TEMP_AUDIT_EXPORT", "TEMP_MONTHLY_REPORT", "TEMP_PRIVATE_LOG"].forEach(
+    (sheetName) => {
+      const sheet = ss.getSheetByName(sheetName);
+      if (sheet) ss.deleteSheet(sheet);
+    },
+  );
+
+  const wasMonthEnd = state.isMonthEnd;
+  clearReportPipelineState();
+
+  if (wasMonthEnd && new Date().getDate() === 1) {
+    const now = new Date();
+    const delayMinutes =
+      now.getHours() >= 2
+        ? 1
+        : Math.max(1, (2 - now.getHours()) * 60 - now.getMinutes() + 5);
+    scheduleDeferredCleanSlate(delayMinutes);
+  }
+}
+
+function runReportPipelineWorker() {
+  const lock = LockService.getUserLock();
+  if (!lock.tryLock(1000)) return;
+
+  try {
+    const state = getReportPipelineState();
+    if (!state) return;
+
+    const referenceDate = new Date(state.referenceIso);
+    cleanupUntrackedReportPipelineFiles(state);
+
+    if (state.activeTempSpreadsheetId) {
+      cleanupInterruptedCompanySpreadsheet(state);
+    }
+
+    switch (state.stage) {
+      case "DAILY_MAIN_PDF":
+        createDailyMainPdfStage(state, referenceDate);
+        break;
+      case "DAILY_AUDIT_PDF":
+        createDailyAuditPdfStage(state, referenceDate);
+        break;
+      case "DAILY_SEND":
+        sendDailyReportStage(state, referenceDate);
+        break;
+      case "MONTHLY_MAIN_PDF":
+        createMonthlyMainPdfStage(state, referenceDate);
+        break;
+      case "MONTHLY_COMPANY_FILE":
+        createMonthlyCompanyFileStage(state, referenceDate);
+        break;
+      case "MONTHLY_SEND":
+        sendMonthlyReportStage(state, referenceDate);
+        break;
+      case "CLEANUP":
+        cleanupReportPipelineStage(state);
+        return;
+      default:
+        throw new Error(`Unknown report pipeline stage: ${state.stage}`);
+    }
+
+    scheduleReportPipelineWorker(1);
+  } catch (err) {
+    const state = getReportPipelineState();
+    if (state) {
+      state.attempts = Number(state.attempts || 0) + 1;
+      state.lastError = String(err);
+      saveReportPipelineState(state);
+
+      if (state.attempts < 3) {
+        scheduleReportPipelineWorker(5);
+      } else if (!state.failureEmailSent) {
+        MailApp.sendEmail({
+          to: "imhaninmohd@gmail.com",
+          subject: "Al Raked Report Pipeline FAILED",
+          body:
+            `Stage: ${state.stage}\n` +
+            `Date: ${state.dateKey}\n\n` +
+            String(err),
+        });
+        state.failureEmailSent = true;
+        saveReportPipelineState(state);
+      }
+    }
+
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function runReportPipelineWatchdog() {
+  if (getReportPipelineState()) {
+    runReportPipelineWorker();
+    return;
+  }
+
+  cleanupUntrackedReportPipelineFiles(null);
+
+  const today = new Date();
+  if (today.getDate() !== 1 || today.getHours() < 2) return;
+
+  const previousMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const monthKey = reportPipelineMonthKey(previousMonth);
+  const active = PropertiesService.getScriptProperties().getProperty(
+    REPORT_PIPELINE_ACTIVE_PREFIX + monthKey,
+  );
+
+  if (active === "YES") runDeferredCleanSlate();
+}
+
+function scheduleDeferredCleanSlate(delayMinutes) {
+  const handler = "runDeferredCleanSlate";
+
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (trigger.getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger(handler)
+    .timeBased()
+    .after(Math.max(1, Number(delayMinutes) || 1) * 60 * 1000)
+    .create();
+}
+
+function runMonthlyCleanSlateCheck() {
+  runDeferredCleanSlate();
+}
+
+function runDeferredCleanSlate() {
+  const today = new Date();
+  if (today.getDate() !== 1) return;
+
+  if (today.getHours() < 2) {
+    scheduleDeferredCleanSlate(
+      Math.max(1, (2 - today.getHours()) * 60 - today.getMinutes() + 5),
+    );
+    return;
+  }
+
+  const previousMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const previousMonthLastDay = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    0,
+    23,
+    30,
+  );
+  const monthKey = reportPipelineMonthKey(previousMonth);
+  const dailyKey = reportPipelineDateKey(previousMonthLastDay);
+  const properties = PropertiesService.getScriptProperties();
+  const activeKey = REPORT_PIPELINE_ACTIVE_PREFIX + monthKey;
+
+  if (properties.getProperty(activeKey) !== "YES") return;
+
+  const archiveName = getReportPipelineArchiveName(previousMonth);
+  const archiveExists = Boolean(
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName(archiveName),
+  );
+  const dailySent =
+    properties.getProperty(REPORT_PIPELINE_DAILY_SENT_PREFIX + dailyKey) ===
+    "YES";
+  const monthlySent =
+    properties.getProperty(REPORT_PIPELINE_MONTHLY_SENT_PREFIX + monthKey) ===
+    "YES";
+
+  if (!archiveExists || !dailySent || !monthlySent) {
+    if (getReportPipelineState()) scheduleReportPipelineWorker(1);
+    scheduleDeferredCleanSlate(15);
+    Logger.log(
+      `Clean Slate waiting. Archive=${archiveExists}, daily=${dailySent}, monthly=${monthlySent}`,
+    );
+    return;
+  }
+
+  cleanSlateProtocol();
+
+  properties.setProperty(
+    REPORT_PIPELINE_CLEAN_SENT_PREFIX + monthKey,
+    "YES",
+  );
+  properties.setProperty(activeKey, "COMPLETE");
 }
 function onFormSubmit(e) {
   const lock = LockService.getScriptLock();
@@ -3273,17 +4022,17 @@ function emailExtendedShiftReport() {
 
   // -------- SUMMARY (IDENTICAL STRUCTURE) --------
   const summaryDataExcl = [
-    ["Earnings Today", formatMoney(totalTodayExcl)],
-    ["Cars Washed Today", carsTodayExcl],
-    ["Monthly Earnings", formatMoney(totalMonthExcl)],
-    ["Cars Washed this Month", carsMonthExcl],
+    ["Today", formatMoney(totalTodayExcl)],
+    ["Cars Today", carsTodayExcl],
+    ["This Month", formatMoney(totalMonthExcl)],
+    ["Cars This Month", carsMonthExcl],
   ];
 
   const summaryDataIncl = [
-    ["Earnings Today", formatMoney(totalTodayIncl)],
-    ["Cars Washed Today", carsTodayIncl],
-    ["Monthly Earnings", formatMoney(totalMonthIncl)],
-    ["Cars Washed this Month", carsMonthIncl],
+    ["Today", formatMoney(totalTodayIncl)],
+    ["Cars Today", carsTodayIncl],
+    ["This Month", formatMoney(totalMonthIncl)],
+    ["Cars This Month", carsMonthIncl],
   ];
 
   sheet
@@ -3462,5 +4211,3 @@ function testTelegramChannel() {
     "",
   ]);
 }
-
-
