@@ -18,6 +18,7 @@ const REPORT_FONT_SIZE = Object.freeze({
   TABLE_BODY: 14,
   HIGHLIGHT: 14,
 });
+const REPORT_TABLE_ROW_BACKGROUNDS = Object.freeze(["#F8F8F8", "#FFFFFF"]);
 const FORM_DATA_COLUMNS = 11;
 const FORMATTING_RECOVERY_ROWS = 10;
 const EMPLOYEE_MONTH_INDEX_SHEET = "EmployeeMonthIndex";
@@ -34,6 +35,16 @@ const REPORT_PIPELINE_MONTHLY_SENT_PREFIX = "AL_RAKED_MONTHLY_SENT_";
 const REPORT_PIPELINE_CLEAN_SENT_PREFIX = "AL_RAKED_CLEAN_SENT_";
 const REPORT_PIPELINE_TEMP_FOLDER_PROPERTY = "AL_RAKED_TEMP_FOLDER_ID";
 const REPORT_PIPELINE_TEMP_FOLDER_NAME = "_Al Raked Automation Temporary Files";
+
+function buildAlternatingReportBackgrounds(rowCount, columnCount) {
+  return Array.from({ length: rowCount }, (_, rowIndex) =>
+    Array(columnCount).fill(
+      REPORT_TABLE_ROW_BACKGROUNDS[
+        rowIndex % REPORT_TABLE_ROW_BACKGROUNDS.length
+      ],
+    ),
+  );
+}
 
 function isLookupExcludedSheet(sheetName) {
   return (
@@ -1181,7 +1192,12 @@ function calc() {
 
   // Left table
   const exclRange = sheet.getRange(currentRow, 13, summaryDataExcl.length, 2);
-  exclRange.setValues(summaryDataExcl).setFontFamily(REPORT_FONT_FAMILY);
+  exclRange
+    .setValues(summaryDataExcl)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setBackgrounds(
+      buildAlternatingReportBackgrounds(summaryDataExcl.length, 2),
+    );
   exclRange.setBorder(true, true, true, true, true, true);
   exclRange.setHorizontalAlignment("right");
   sheet
@@ -1194,7 +1210,12 @@ function calc() {
 
   // Right table
   const inclRange = sheet.getRange(currentRow, 16, summaryDataIncl.length, 2);
-  inclRange.setValues(summaryDataIncl).setFontFamily(REPORT_FONT_FAMILY);
+  inclRange
+    .setValues(summaryDataIncl)
+    .setFontFamily(REPORT_FONT_FAMILY)
+    .setBackgrounds(
+      buildAlternatingReportBackgrounds(summaryDataIncl.length, 2),
+    );
   inclRange.setBorder(true, true, true, true, true, true);
   inclRange.setHorizontalAlignment("right");
   sheet
@@ -1248,6 +1269,9 @@ function calc() {
         .setValues(rows)
         .setFontFamily(REPORT_FONT_FAMILY)
         .setFontSize(REPORT_FONT_SIZE.TABLE_BODY)
+        .setBackgrounds(
+          buildAlternatingReportBackgrounds(rows.length, headers.length),
+        )
         .setWrap(true);
 
       range.setBorder(true, true, true, true, true, true);
@@ -4039,11 +4063,17 @@ function emailExtendedShiftReport() {
     .getRange(currentRow, 13, summaryDataExcl.length, 2)
     .setValues(summaryDataExcl)
     .setFontFamily(REPORT_FONT_FAMILY)
+    .setBackgrounds(
+      buildAlternatingReportBackgrounds(summaryDataExcl.length, 2),
+    )
     .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
   sheet
     .getRange(currentRow, 16, summaryDataIncl.length, 2)
     .setValues(summaryDataIncl)
     .setFontFamily(REPORT_FONT_FAMILY)
+    .setBackgrounds(
+      buildAlternatingReportBackgrounds(summaryDataIncl.length, 2),
+    )
     .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
 
   currentRow += summaryDataExcl.length + 3;
@@ -4066,10 +4096,19 @@ function emailExtendedShiftReport() {
       .setFontSize(REPORT_FONT_SIZE.TABLE_HEADER);
     currentRow++;
     if (rows.length) {
-      sheet
-        .getRange(currentRow, 13, rows.length, headers.length)
+      const range = sheet.getRange(
+        currentRow,
+        13,
+        rows.length,
+        headers.length,
+      );
+
+      range
         .setValues(rows)
         .setFontFamily(REPORT_FONT_FAMILY)
+        .setBackgrounds(
+          buildAlternatingReportBackgrounds(rows.length, headers.length),
+        )
         .setFontSize(REPORT_FONT_SIZE.TABLE_BODY);
       currentRow += rows.length + 2;
     } else {
