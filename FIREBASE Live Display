@@ -1,0 +1,573 @@
+// AL RAKED LIVE DISPLAY - FIREBASE BRIDGE
+// Keep this as a separate Apps Script file so the feature is easy to remove.
+
+const FIREBASE_LIVE_DISPLAY_PATH = "liveDisplay";
+const FIREBASE_LIVE_DISPLAY_SLOT_PROPERTY = "FIREBASE_LIVE_DISPLAY_NEXT_SLOT";
+const FIREBASE_ACCESS_TOKEN_CACHE_KEY = "FIREBASE_LIVE_DISPLAY_ACCESS_TOKEN";
+const FIREBASE_LIVE_DISPLAY_SHEET = "Form Responses 1";
+const FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN = 12;
+const FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW = 2;
+const FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT = 30;
+const FIREBASE_LIVE_DISPLAY_TIME_ZONE = "Asia/Dubai";
+const FIREBASE_RELAY_CONTROL_PATH = "displayControl/main";
+const FIREBASE_RELAY_RELOAD_TTL_MS = 2 * 60 * 1000;
+
+function isFirebaseLiveDisplayConfigured() {
+  const properties = PropertiesService.getScriptProperties();
+  return Boolean(
+    properties.getProperty("FIREBASE_DATABASE_URL") &&
+      properties.getProperty("FIREBASE_CLIENT_EMAIL") &&
+      properties.getProperty("FIREBASE_PRIVATE_KEY"),
+  );
+}
+
+function createFirebaseLiveDisplayEntry(rowData) {
+  if (!isFirebaseLiveDisplayConfigured() || !rowData.length) return null;
+
+  const properties = PropertiesService.getScriptProperties();
+  const currentSlot = Number(
+    properties.getProperty(FIREBASE_LIVE_DISPLAY_SLOT_PROPERTY) || "0",
+  );
+  const slot = Number.isFinite(currentSlot)
+    ? Math.max(0, Math.floor(currentSlot)) % FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT
+    : 0;
+  properties.setProperty(
+    FIREBASE_LIVE_DISPLAY_SLOT_PROPERTY,
+    String((slot + 1) % FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT),
+  );
+
+  const submittedAt = new Date(rowData[0]);
+  const timestamp = isNaN(submittedAt.getTime())
+    ? new Date().toISOString()
+    : submittedAt.toISOString();
+  const ready = isFirebaseLiveDisplayChecked(rowData[11]);
+  const readyAt = ready ? new Date().toISOString() : null;
+
+  return {
+    slot: slot,
+    record: {
+      id: Utilities.getUuid(),
+      timestamp: timestamp,
+      foreman: String(rowData[1] || ""),
+      employee: String(rowData[2] || ""),
+      licensePlate: String(rowData[3] || ""),
+      service: String(rowData[4] || ""),
+      price: String(rowData[5] || ""),
+      company: String(rowData[6] || ""),
+      ready: ready,
+      readyAt: readyAt,
+      readyEventId: ready ? Utilities.getUuid() : null,
+    },
+  };
+}
+
+function handleFirebaseLiveDisplayStatusEdit(e) {
+  if (!e || !e.range || !isFirebaseLiveDisplayConfigured()) return;
+
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== FIREBASE_LIVE_DISPLAY_SHEET) return;
+
+  const firstColumn = e.range.getColumn();
+  const lastColumn = firstColumn + e.range.getNumColumns() - 1;
+  if (
+    FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN < firstColumn ||
+    FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN > lastColumn
+  ) {
+    return;
+  }
+
+  const firstRow = Math.max(
+    FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW,
+    e.range.getRow(),
+  );
+  const finalEditedRow = e.range.getRow() + e.range.getNumRows() - 1;
+  const finalLiveRow = Math.min(
+    FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW +
+      FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT -
+      1,
+    sheet.getLastRow(),
+  );
+  const lastRow = Math.min(finalEditedRow, finalLiveRow);
+  if (firstRow > lastRow) return;
+
+  const rowData = sheet
+    .getRange(
+      firstRow,
+      1,
+      lastRow - firstRow + 1,
+      FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN,
+    )
+    .getValues();
+
+  const slots = getFirebaseLiveDisplaySlots();
+
+  rowData.forEach((row) => {
+    updateFirebaseLiveDisplayStatus(
+      slots,
+      row,
+      isFirebaseLiveDisplayChecked(
+        row[FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN - 1],
+      ),
+    );
+  });
+}
+
+function reconcileFirebaseLiveDisplayStatuses() {
+  if (
+    !isFirebaseLiveDisplayConfigured() ||
+    !isFirebaseLiveDisplayReconcileWindow()
+  ) {
+    return;
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+      FIREBASE_LIVE_DISPLAY_SHEET,
+    );
+    if (!sheet || sheet.getLastRow() < FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW) {
+      return;
+    }
+
+    const rows = getLatestFirebaseLiveDisplayRows(sheet);
+    const slots = getFirebaseLiveDisplaySlots();
+    const snapshot = createFirebaseLiveDisplaySnapshot(rows, slots);
+    putFirebaseLiveDisplaySnapshot(snapshot);
+
+    PropertiesService.getScriptProperties().setProperty(
+      FIREBASE_LIVE_DISPLAY_SLOT_PROPERTY,
+      String(rows.length % FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT),
+    );
+  } catch (err) {
+    Logger.log("Firebase live-display reconciliation failed: " + err);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+function getLatestFirebaseLiveDisplayRows(sheet) {
+  const rowCount = Math.min(
+    FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT,
+    sheet.getLastRow() - FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW + 1,
+  );
+  if (rowCount <= 0) return [];
+
+  return sheet
+    .getRange(
+      FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW,
+      1,
+      rowCount,
+      FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN,
+    )
+    .getValues()
+    .filter((row) => row[0] && normalizeFirebaseLiveDisplayPlate(row[3]));
+}
+
+function createFirebaseLiveDisplaySnapshot(rows, existingSlots) {
+  const snapshot = {};
+  const claimedSlots = {};
+
+  rows.slice().reverse().forEach((rowData, index) => {
+    const existingRecord = findFirebaseLiveDisplayRecord(
+      existingSlots,
+      claimedSlots,
+      rowData,
+    );
+    const ready = isFirebaseLiveDisplayChecked(
+      rowData[FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN - 1],
+    );
+    const wasReady = Boolean(
+      existingRecord && isFirebaseLiveDisplayChecked(existingRecord.ready),
+    );
+
+    snapshot["slot" + index] = {
+      id: existingRecord ? existingRecord.id : Utilities.getUuid(),
+      timestamp: normalizeFirebaseLiveDisplayTimestamp(rowData[0]),
+      foreman: String(rowData[1] || ""),
+      employee: String(rowData[2] || ""),
+      licensePlate: String(rowData[3] || ""),
+      service: String(rowData[4] || ""),
+      price: String(rowData[5] || ""),
+      company: String(rowData[6] || ""),
+      ready: ready,
+      readyAt:
+        ready && wasReady
+          ? existingRecord.readyAt || null
+          : ready
+            ? new Date().toISOString()
+            : null,
+      readyEventId:
+        ready && wasReady
+          ? existingRecord.readyEventId || existingRecord.id
+          : ready
+            ? Utilities.getUuid()
+            : null,
+    };
+  });
+
+  return snapshot;
+}
+
+function findFirebaseLiveDisplayRecord(
+  slots,
+  claimedSlots,
+  rowData,
+) {
+  const slotNames = Object.keys(slots || {});
+  const rowTime = new Date(rowData[0]).getTime();
+  const matchingSlot = slotNames.find((slotName) => {
+    const record = slots[slotName];
+    if (!record || claimedSlots[slotName]) return false;
+    const recordTime = new Date(record.timestamp).getTime();
+
+    // Timestamp + plate identify the original form response. Price, service,
+    // employee and status are mutable display fields, so they must not turn an
+    // edited response into a new live-display entry during reconciliation.
+    return (
+      normalizeFirebaseLiveDisplayPlate(record.licensePlate) ===
+        normalizeFirebaseLiveDisplayPlate(rowData[3]) &&
+      Number.isFinite(rowTime) &&
+      Number.isFinite(recordTime) &&
+      Math.abs(rowTime - recordTime) <= 1000
+    );
+  });
+
+  if (!matchingSlot) return null;
+  claimedSlots[matchingSlot] = true;
+  return slots[matchingSlot];
+}
+
+function putFirebaseLiveDisplaySnapshot(snapshot) {
+  const databaseUrl = PropertiesService.getScriptProperties()
+    .getProperty("FIREBASE_DATABASE_URL")
+    .replace(/\/$/, "");
+  const response = UrlFetchApp.fetch(
+    databaseUrl + "/" + FIREBASE_LIVE_DISPLAY_PATH + ".json",
+    {
+      method: "put",
+      contentType: "application/json",
+      headers: {
+        Authorization: "Bearer " + getFirebaseLiveDisplayAccessToken(),
+      },
+      payload: JSON.stringify(snapshot),
+      muteHttpExceptions: true,
+    },
+  );
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error("Firebase snapshot update returned HTTP " + status);
+  }
+}
+
+function normalizeFirebaseLiveDisplayTimestamp(value) {
+  const timestamp = new Date(value);
+  return isNaN(timestamp.getTime())
+    ? new Date().toISOString()
+    : timestamp.toISOString();
+}
+
+function isFirebaseLiveDisplayReconcileWindow() {
+  const currentTime = Number(
+    Utilities.formatDate(
+      new Date(),
+      FIREBASE_LIVE_DISPLAY_TIME_ZONE,
+      "HHmm",
+    ),
+  );
+  return currentTime >= 700;
+}
+
+function getFirebaseLiveDisplaySlots() {
+  const databaseUrl = PropertiesService.getScriptProperties()
+    .getProperty("FIREBASE_DATABASE_URL")
+    .replace(/\/$/, "");
+  const response = UrlFetchApp.fetch(
+    databaseUrl + "/" + FIREBASE_LIVE_DISPLAY_PATH + ".json",
+    {
+      method: "get",
+      headers: {
+        Authorization: "Bearer " + getFirebaseLiveDisplayAccessToken(),
+      },
+      muteHttpExceptions: true,
+    },
+  );
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error("Firebase status lookup returned HTTP " + status);
+  }
+
+  return JSON.parse(response.getContentText() || "{}") || {};
+}
+
+function updateFirebaseLiveDisplayStatus(slots, rowData, ready) {
+  const rowPlate = normalizeFirebaseLiveDisplayPlate(rowData[3]);
+  if (!rowPlate) return;
+
+  const rowTimestamp = new Date(rowData[0]).getTime();
+  const candidates = Object.keys(slots)
+    .filter((slot) => {
+      const record = slots[slot];
+      return (
+        record &&
+        typeof record === "object" &&
+        normalizeFirebaseLiveDisplayPlate(record.licensePlate) === rowPlate
+      );
+    })
+    .map((slot) => {
+      const record = slots[slot];
+      const recordTimestamp = new Date(record.timestamp).getTime();
+      const timeDifference =
+        Number.isFinite(rowTimestamp) && Number.isFinite(recordTimestamp)
+          ? Math.abs(recordTimestamp - rowTimestamp)
+          : Number.POSITIVE_INFINITY;
+
+      let score = 0;
+      score += firebaseLiveDisplayTextScore(rowData[2], record.employee, 5);
+      score += firebaseLiveDisplayTextScore(rowData[4], record.service, 4);
+      score += firebaseLiveDisplayTextScore(rowData[1], record.foreman, 2);
+      score += firebaseLiveDisplayTextScore(rowData[6], record.company, 1);
+      score += firebaseLiveDisplayPriceScore(rowData[5], record.price);
+      score += firebaseLiveDisplayTimeScore(timeDifference);
+
+      return {
+        slot: slot,
+        score: score,
+        timeDifference: timeDifference,
+        recordTimestamp: Number.isFinite(recordTimestamp) ? recordTimestamp : 0,
+      };
+    })
+    .sort((first, second) => {
+      if (second.score !== first.score) return second.score - first.score;
+      if (first.timeDifference !== second.timeDifference) {
+        return first.timeDifference - second.timeDifference;
+      }
+      return second.recordTimestamp - first.recordTimestamp;
+    });
+
+  const matchingSlot = candidates.length ? candidates[0].slot : null;
+  if (!matchingSlot) {
+    Logger.log("No Firebase live-display slot matched plate " + rowPlate);
+    return { matched: false, changed: false };
+  }
+
+  if (isFirebaseLiveDisplayChecked(slots[matchingSlot].ready) === ready) {
+    return { matched: true, changed: false };
+  }
+
+  const readyAt = ready ? new Date().toISOString() : null;
+  const readyEventId = ready ? Utilities.getUuid() : null;
+
+  const databaseUrl = PropertiesService.getScriptProperties()
+    .getProperty("FIREBASE_DATABASE_URL")
+    .replace(/\/$/, "");
+  const response = UrlFetchApp.fetch(
+    databaseUrl +
+      "/" +
+      FIREBASE_LIVE_DISPLAY_PATH +
+      "/" +
+      matchingSlot +
+      ".json",
+    {
+      method: "patch",
+      contentType: "application/json",
+      headers: {
+        Authorization: "Bearer " + getFirebaseLiveDisplayAccessToken(),
+      },
+      payload: JSON.stringify({
+        ready: ready,
+        readyAt: readyAt,
+        readyEventId: readyEventId,
+      }),
+      muteHttpExceptions: true,
+    },
+  );
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error("Firebase status update returned HTTP " + status);
+  }
+
+  slots[matchingSlot] = Object.assign({}, slots[matchingSlot], {
+    ready: ready,
+    readyAt: readyAt,
+    readyEventId: readyEventId,
+  });
+  return { matched: true, changed: true };
+}
+
+function isFirebaseLiveDisplayChecked(value) {
+  return value === true || String(value || "").toUpperCase() === "TRUE";
+}
+
+function normalizeFirebaseLiveDisplayPlate(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function normalizeFirebaseLiveDisplayText(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function firebaseLiveDisplayTextScore(firstValue, secondValue, weight) {
+  const first = normalizeFirebaseLiveDisplayText(firstValue);
+  const second = normalizeFirebaseLiveDisplayText(secondValue);
+  if (!first || !second) return 0;
+  if (first === second) return weight;
+
+  const firstTokens = first.split(" ");
+  const secondTokens = second.split(" ");
+  const sharedTokens = firstTokens.filter((token) => secondTokens.includes(token));
+  const longestCount = Math.max(firstTokens.length, secondTokens.length);
+  const overlap = longestCount ? sharedTokens.length / longestCount : 0;
+
+  if (first.includes(second) || second.includes(first) || overlap >= 0.6) {
+    return Math.max(1, Math.round(weight * 0.65));
+  }
+  return 0;
+}
+
+function firebaseLiveDisplayPriceScore(firstValue, secondValue) {
+  const first = parseFloat(String(firstValue || "").replace(/[^0-9.-]/g, ""));
+  const second = parseFloat(String(secondValue || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(first) && Number.isFinite(second) && first === second
+    ? 1
+    : 0;
+}
+
+function firebaseLiveDisplayTimeScore(timeDifference) {
+  if (!Number.isFinite(timeDifference)) return 0;
+  if (timeDifference <= 2 * 60 * 1000) return 3;
+  if (timeDifference <= 10 * 60 * 1000) return 2;
+  if (timeDifference <= 30 * 60 * 1000) return 1;
+  return 0;
+}
+
+function publishFirebaseLiveDisplayEntry(entry) {
+  if (!entry || !entry.record) return;
+
+  const databaseUrl = PropertiesService.getScriptProperties()
+    .getProperty("FIREBASE_DATABASE_URL")
+    .replace(/\/$/, "");
+  const accessToken = getFirebaseLiveDisplayAccessToken();
+  const endpoint =
+    databaseUrl +
+    "/" +
+    FIREBASE_LIVE_DISPLAY_PATH +
+    "/slot" +
+    entry.slot +
+    ".json";
+
+  const response = UrlFetchApp.fetch(endpoint, {
+    method: "put",
+    contentType: "application/json",
+    headers: { Authorization: "Bearer " + accessToken },
+    payload: JSON.stringify(entry.record),
+    muteHttpExceptions: true,
+  });
+
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error("Firebase returned HTTP " + status);
+  }
+}
+
+function requestRelayDisplayReload() {
+  if (!isFirebaseLiveDisplayConfigured()) {
+    throw new Error("Firebase live display is not configured.");
+  }
+
+  const databaseUrl = PropertiesService.getScriptProperties()
+    .getProperty("FIREBASE_DATABASE_URL")
+    .replace(/\/$/, "");
+  const issuedAt = new Date();
+  const command = {
+    id: Utilities.getUuid(),
+    type: "reload",
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: new Date(
+      issuedAt.getTime() + FIREBASE_RELAY_RELOAD_TTL_MS,
+    ).toISOString(),
+  };
+  const response = UrlFetchApp.fetch(
+    databaseUrl + "/" + FIREBASE_RELAY_CONTROL_PATH + ".json",
+    {
+      method: "put",
+      contentType: "application/json",
+      headers: {
+        Authorization: "Bearer " + getFirebaseLiveDisplayAccessToken(),
+      },
+      payload: JSON.stringify(command),
+      muteHttpExceptions: true,
+    },
+  );
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw new Error("Firebase reload command returned HTTP " + status);
+  }
+
+  Logger.log("Relay reload command sent: " + command.id);
+  return command.id;
+}
+
+function getFirebaseLiveDisplayAccessToken() {
+  const cache = CacheService.getScriptCache();
+  const cachedToken = cache.get(FIREBASE_ACCESS_TOKEN_CACHE_KEY);
+  if (cachedToken) return cachedToken;
+
+  const properties = PropertiesService.getScriptProperties();
+  const clientEmail = properties.getProperty("FIREBASE_CLIENT_EMAIL");
+  const privateKey = properties
+    .getProperty("FIREBASE_PRIVATE_KEY")
+    .replace(/\\n/g, "\n");
+  const issuedAt = Math.floor(Date.now() / 1000);
+
+  const header = encodeFirebaseJwtPart({ alg: "RS256", typ: "JWT" });
+  const claim = encodeFirebaseJwtPart({
+    iss: clientEmail,
+    scope:
+      "https://www.googleapis.com/auth/firebase.database " +
+      "https://www.googleapis.com/auth/userinfo.email",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: issuedAt,
+    exp: issuedAt + 3600,
+  });
+  const unsignedToken = header + "." + claim;
+  const signature = Utilities.computeRsaSha256Signature(
+    unsignedToken,
+    privateKey,
+  );
+  const assertion =
+    unsignedToken + "." + Utilities.base64EncodeWebSafe(signature).replace(/=+$/, "");
+
+  const response = UrlFetchApp.fetch("https://oauth2.googleapis.com/token", {
+    method: "post",
+    payload: {
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: assertion,
+    },
+    muteHttpExceptions: true,
+  });
+
+  const status = response.getResponseCode();
+  const result = JSON.parse(response.getContentText() || "{}");
+  if (status < 200 || status >= 300 || !result.access_token) {
+    throw new Error("Firebase authentication failed with HTTP " + status);
+  }
+
+  cache.put(
+    FIREBASE_ACCESS_TOKEN_CACHE_KEY,
+    result.access_token,
+    Math.max(60, Number(result.expires_in || 3600) - 120),
+  );
+  return result.access_token;
+}
+
+function encodeFirebaseJwtPart(value) {
+  return Utilities.base64EncodeWebSafe(JSON.stringify(value)).replace(/=+$/, "");
+}
