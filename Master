@@ -1800,7 +1800,7 @@ function processFormSubmission(submittedRow) {
   // failed before formatting, the next successful submission repairs it.
 
   if (lastRow >= 2) {
-    const templateRange = sheet.getRange(1, 20, 1, FORM_DATA_COLUMNS);
+    const templateRange = sheet.getRange(1, 21, 1, FORM_DATA_COLUMNS);
     const formatThroughRow = Math.min(
       lastRow,
       1 + FORMATTING_RECOVERY_ROWS,
