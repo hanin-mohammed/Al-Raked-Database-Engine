@@ -13,6 +13,8 @@ const FIREBASE_RELAY_CONTROL_PATH = "displayControl/main";
 const FIREBASE_RELAY_HEALTH_PATH = "displayHealth/main";
 const FIREBASE_RELAY_RELOAD_TTL_MS = 3 * 60 * 1000;
 const FIREBASE_RELAY_HEARTBEAT_STALE_MS = 3 * 60 * 1000;
+const FIREBASE_RELAY_MONITOR_START_HHMM = 700;
+const FIREBASE_RELAY_MONITOR_END_HHMM = 2220;
 const FIREBASE_RELAY_RAPID_RELOAD_LIMIT = 3;
 const FIREBASE_RELAY_RAPID_RELOAD_COOLDOWN_MS = 2 * 60 * 1000;
 const FIREBASE_RELAY_SLOW_RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
@@ -671,7 +673,10 @@ function isFirebaseRelayHealthWindow() {
       "HHmm",
     ),
   );
-  return currentTime >= 700;
+  return (
+    currentTime >= FIREBASE_RELAY_MONITOR_START_HHMM &&
+    currentTime < FIREBASE_RELAY_MONITOR_END_HHMM
+  );
 }
 
 function getFirebaseRelayDisplayHealth() {
