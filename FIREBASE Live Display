@@ -9,6 +9,7 @@ const FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN = 12;
 const FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW = 2;
 const FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT = 30;
 const FIREBASE_LIVE_DISPLAY_TIME_ZONE = "Asia/Dubai";
+const FIREBASE_LIVE_DISPLAY_EDIT_DEBOUNCE_MS = 8 * 1000;
 const FIREBASE_RELAY_CONTROL_PATH = "displayControl/main";
 const FIREBASE_RELAY_HEALTH_PATH = "displayHealth/main";
 const FIREBASE_RELAY_RELOAD_TTL_MS = 3 * 60 * 1000;
@@ -43,6 +44,10 @@ const FIREBASE_RELAY_INCIDENT_REASON_PROPERTY =
   "FIREBASE_RELAY_HEALTH_INCIDENT_REASON";
 const FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY =
   "FIREBASE_LIVE_DISPLAY_LAST_FULL_RECONCILE_AT";
+const FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION_PROPERTY =
+  "FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION";
+const FIREBASE_LIVE_DISPLAY_DIRTY_AT_PROPERTY =
+  "FIREBASE_LIVE_DISPLAY_DIRTY_AT";
 
 function isFirebaseLiveDisplayConfigured() {
   const properties = PropertiesService.getScriptProperties();
@@ -144,6 +149,70 @@ function handleFirebaseLiveDisplayStatusEdit(e) {
   });
 }
 
+function handleFirebaseLiveDisplayEdit(e) {
+  if (!isFirebaseLiveDisplayRelevantEdit(e)) return;
+  debounceFirebaseLiveDisplayReconciliation();
+}
+
+function handleFirebaseLiveDisplayChange(e) {
+  if (!isFirebaseLiveDisplayRelevantChange(e)) return;
+  debounceFirebaseLiveDisplayReconciliation();
+}
+
+function isFirebaseLiveDisplayRelevantEdit(e) {
+  if (!e || !e.range || !isFirebaseLiveDisplayConfigured()) return false;
+
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== FIREBASE_LIVE_DISPLAY_SHEET) return false;
+
+  const firstRow = e.range.getRow();
+  const lastRow = firstRow + e.range.getNumRows() - 1;
+  if (lastRow < FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW) return false;
+
+  const firstColumn = e.range.getColumn();
+  const lastColumn = firstColumn + e.range.getNumColumns() - 1;
+  return (
+    firstColumn <= FIREBASE_LIVE_DISPLAY_FINISHED_COLUMN && lastColumn >= 1
+  );
+}
+
+function isFirebaseLiveDisplayRelevantChange(e) {
+  if (!e || !e.source || !isFirebaseLiveDisplayConfigured()) return false;
+
+  const relevantChangeTypes = {
+    INSERT_ROW: true,
+    REMOVE_ROW: true,
+    INSERT_COLUMN: true,
+    REMOVE_COLUMN: true,
+    OTHER: true,
+  };
+  if (!relevantChangeTypes[String(e.changeType || "").toUpperCase()]) {
+    return false;
+  }
+
+  const sheet = e.source.getActiveSheet();
+  return Boolean(sheet && sheet.getName() === FIREBASE_LIVE_DISPLAY_SHEET);
+}
+
+function debounceFirebaseLiveDisplayReconciliation() {
+  const lock = LockService.getScriptLock();
+  let generation = "";
+
+  try {
+    lock.waitLock(30000);
+    generation = Date.now() + ":" + Utilities.getUuid();
+    PropertiesService.getScriptProperties().setProperties({
+      [FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION_PROPERTY]: generation,
+      [FIREBASE_LIVE_DISPLAY_DIRTY_AT_PROPERTY]: String(Date.now()),
+    });
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+
+  Utilities.sleep(FIREBASE_LIVE_DISPLAY_EDIT_DEBOUNCE_MS);
+  reconcileFirebaseLiveDisplaySnapshot(true, generation);
+}
+
 function reconcileFirebaseLiveDisplayStatuses() {
   if (!isFirebaseLiveDisplayConfigured()) return;
 
@@ -153,31 +222,49 @@ function reconcileFirebaseLiveDisplayStatuses() {
     Logger.log("Relay health monitor failed: " + err);
   }
 
-  if (!isFirebaseLiveDisplayReconcileWindow()) return;
+  reconcileFirebaseLiveDisplaySnapshot(false, "");
+}
+
+function reconcileFirebaseLiveDisplaySnapshot(force, expectedGeneration) {
+  if (!isFirebaseLiveDisplayConfigured()) return false;
+
+  if (!force && !isFirebaseLiveDisplayReconcileWindow()) return false;
 
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return;
+  if (force) {
+    lock.waitLock(30000);
+  } else if (!lock.tryLock(1000)) {
+    return false;
+  }
 
   try {
     const properties = PropertiesService.getScriptProperties();
+    if (
+      expectedGeneration &&
+      properties.getProperty(
+        FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION_PROPERTY,
+      ) !== expectedGeneration
+    ) {
+      return false;
+    }
+
     const lastFullReconcileAt = Number(
       properties.getProperty(FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY) ||
         "0",
     );
     if (
+      !force &&
       Number.isFinite(lastFullReconcileAt) &&
       Date.now() - lastFullReconcileAt <
         FIREBASE_LIVE_DISPLAY_FULL_RECONCILE_MS
     ) {
-      return;
+      return false;
     }
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
       FIREBASE_LIVE_DISPLAY_SHEET,
     );
-    if (!sheet || sheet.getLastRow() < FIREBASE_LIVE_DISPLAY_FIRST_DATA_ROW) {
-      return;
-    }
+    if (!sheet) return false;
 
     const rows = getLatestFirebaseLiveDisplayRows(sheet);
     const slots = getFirebaseLiveDisplaySlots();
@@ -190,8 +277,21 @@ function reconcileFirebaseLiveDisplayStatuses() {
       ),
       [FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY]: String(Date.now()),
     });
+    if (
+      expectedGeneration &&
+      properties.getProperty(
+        FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION_PROPERTY,
+      ) === expectedGeneration
+    ) {
+      properties.deleteProperty(
+        FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION_PROPERTY,
+      );
+      properties.deleteProperty(FIREBASE_LIVE_DISPLAY_DIRTY_AT_PROPERTY);
+    }
+    return true;
   } catch (err) {
     Logger.log("Firebase live-display reconciliation failed: " + err);
+    return false;
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
