@@ -13,6 +13,8 @@ const FIREBASE_RELAY_CONTROL_PATH = "displayControl/main";
 const FIREBASE_RELAY_HEALTH_PATH = "displayHealth/main";
 const FIREBASE_RELAY_RELOAD_TTL_MS = 3 * 60 * 1000;
 const FIREBASE_RELAY_HEARTBEAT_STALE_MS = 3 * 60 * 1000;
+const FIREBASE_RELAY_SNAPSHOT_STALE_MS = 8 * 60 * 1000;
+const FIREBASE_LIVE_DISPLAY_FULL_RECONCILE_MS = 5 * 60 * 1000;
 const FIREBASE_RELAY_MONITOR_START_HHMM = 700;
 const FIREBASE_RELAY_MONITOR_END_HHMM = 2220;
 const FIREBASE_RELAY_RAPID_RELOAD_LIMIT = 3;
@@ -37,6 +39,10 @@ const FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY =
   "FIREBASE_RELAY_HEALTH_INCIDENT_STARTED_AT";
 const FIREBASE_RELAY_FAILURE_EMAIL_SENT_PROPERTY =
   "FIREBASE_RELAY_HEALTH_FAILURE_EMAIL_SENT";
+const FIREBASE_RELAY_INCIDENT_REASON_PROPERTY =
+  "FIREBASE_RELAY_HEALTH_INCIDENT_REASON";
+const FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY =
+  "FIREBASE_LIVE_DISPLAY_LAST_FULL_RECONCILE_AT";
 
 function isFirebaseLiveDisplayConfigured() {
   const properties = PropertiesService.getScriptProperties();
@@ -153,6 +159,19 @@ function reconcileFirebaseLiveDisplayStatuses() {
   if (!lock.tryLock(1000)) return;
 
   try {
+    const properties = PropertiesService.getScriptProperties();
+    const lastFullReconcileAt = Number(
+      properties.getProperty(FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY) ||
+        "0",
+    );
+    if (
+      Number.isFinite(lastFullReconcileAt) &&
+      Date.now() - lastFullReconcileAt <
+        FIREBASE_LIVE_DISPLAY_FULL_RECONCILE_MS
+    ) {
+      return;
+    }
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
       FIREBASE_LIVE_DISPLAY_SHEET,
     );
@@ -165,10 +184,12 @@ function reconcileFirebaseLiveDisplayStatuses() {
     const snapshot = createFirebaseLiveDisplaySnapshot(rows, slots);
     putFirebaseLiveDisplaySnapshot(snapshot);
 
-    PropertiesService.getScriptProperties().setProperty(
-      FIREBASE_LIVE_DISPLAY_SLOT_PROPERTY,
-      String(rows.length % FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT),
-    );
+    properties.setProperties({
+      [FIREBASE_LIVE_DISPLAY_SLOT_PROPERTY]: String(
+        rows.length % FIREBASE_LIVE_DISPLAY_ENTRY_LIMIT,
+      ),
+      [FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY]: String(Date.now()),
+    });
   } catch (err) {
     Logger.log("Firebase live-display reconciliation failed: " + err);
   } finally {
@@ -561,7 +582,21 @@ function monitorRelayDisplayHealth() {
   }
 
   const heartbeatAge = Math.max(0, nowMs - lastSeen);
-  if (heartbeatAge <= FIREBASE_RELAY_HEARTBEAT_STALE_MS) {
+  const lastSnapshotAt = Number(health && health.lastSnapshotAt);
+  const snapshotAge = Number.isFinite(lastSnapshotAt) && lastSnapshotAt > 0
+    ? Math.max(0, nowMs - lastSnapshotAt)
+    : 0;
+  const incidentReason =
+    heartbeatAge > FIREBASE_RELAY_HEARTBEAT_STALE_MS
+      ? "heartbeat-stale"
+      : snapshotAge > FIREBASE_RELAY_SNAPSHOT_STALE_MS
+        ? "snapshot-stale"
+        : "";
+  const previousIncidentReason = String(
+    properties.getProperty(FIREBASE_RELAY_INCIDENT_REASON_PROPERTY) || "",
+  );
+
+  if (!incidentReason) {
     const previousAttempts = Number(
       properties.getProperty(FIREBASE_RELAY_MONITOR_ATTEMPTS_PROPERTY) || "0",
     );
@@ -574,6 +609,7 @@ function monitorRelayDisplayHealth() {
         incidentStartedAt,
         nowMs,
         previousAttempts,
+        previousIncidentReason,
       );
     }
     if (previousAttempts > 0) {
@@ -592,6 +628,13 @@ function monitorRelayDisplayHealth() {
     return;
   }
 
+  if (previousIncidentReason !== incidentReason) {
+    properties.setProperties({
+      [FIREBASE_RELAY_INCIDENT_REASON_PROPERTY]: incidentReason,
+      [FIREBASE_RELAY_MONITOR_MISSED_PROPERTY]: "0",
+    });
+  }
+
   const missedChecks =
     Number(
       properties.getProperty(FIREBASE_RELAY_MONITOR_MISSED_PROPERTY) || "0",
@@ -601,7 +644,11 @@ function monitorRelayDisplayHealth() {
     String(missedChecks),
   );
   if (missedChecks < 2) {
-    Logger.log("Relay heartbeat is stale; awaiting confirmation check.");
+    Logger.log(
+      (incidentReason === "snapshot-stale"
+        ? "Relay Firebase snapshot is stale"
+        : "Relay heartbeat is stale") + "; awaiting confirmation check.",
+    );
     return;
   }
 
@@ -609,7 +656,10 @@ function monitorRelayDisplayHealth() {
     properties.getProperty(FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY) || "0",
   );
   if (!incidentStartedAt) {
-    incidentStartedAt = Number.isFinite(lastSeen) ? lastSeen : nowMs;
+    const lastHealthyAt = incidentReason === "snapshot-stale"
+      ? lastSnapshotAt
+      : lastSeen;
+    incidentStartedAt = Number.isFinite(lastHealthyAt) ? lastHealthyAt : nowMs;
     properties.setProperty(
       FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY,
       String(incidentStartedAt),
@@ -623,6 +673,7 @@ function monitorRelayDisplayHealth() {
       health,
       incidentStartedAt,
       nowMs,
+      incidentReason,
     );
     if (emailSent) {
       properties.setProperty(
@@ -645,7 +696,7 @@ function monitorRelayDisplayHealth() {
   if (lastReloadAt && nowMs - lastReloadAt < cooldown) return;
 
   const command = writeFirebaseRelayReloadCommand(
-    "heartbeat-stale",
+    incidentReason,
     String((health && health.loadId) || ""),
   );
   properties.setProperties({
@@ -657,8 +708,13 @@ function monitorRelayDisplayHealth() {
     ),
   });
   Logger.log(
-    "Relay heartbeat stale for " +
-      Math.round(heartbeatAge / 1000) +
+    (incidentReason === "snapshot-stale"
+      ? "Relay Firebase snapshot stale for "
+      : "Relay heartbeat stale for ") +
+      Math.round(
+        (incidentReason === "snapshot-stale" ? snapshotAge : heartbeatAge) /
+          1000,
+      ) +
       " seconds; reload command " +
       command.id +
       " sent.",
@@ -709,6 +765,7 @@ function resetFirebaseRelayHealthMonitorState(properties, clearArmedDate) {
     FIREBASE_RELAY_MONITOR_PREVIOUS_LOAD_PROPERTY,
     FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY,
     FIREBASE_RELAY_FAILURE_EMAIL_SENT_PROPERTY,
+    FIREBASE_RELAY_INCIDENT_REASON_PROPERTY,
   ];
   if (clearArmedDate) keys.push(FIREBASE_RELAY_MONITOR_ARMED_DATE_PROPERTY);
   keys.forEach((key) => properties.deleteProperty(key));
@@ -750,21 +807,39 @@ function sendFirebaseRelayMonitorEmail(subject, lines) {
   }
 }
 
-function sendFirebaseRelayFailureEmail(health, incidentStartedAt, detectedAt) {
+function sendFirebaseRelayFailureEmail(
+  health,
+  incidentStartedAt,
+  detectedAt,
+  incidentReason,
+) {
   const lastServerContactAt = Number(health && health.lastServerContactAt);
+  const lastSnapshotAt = Number(health && health.lastSnapshotAt);
+  const snapshotStale = incidentReason === "snapshot-stale";
   return sendFirebaseRelayMonitorEmail(
-    "AL RAKED Relay display stopped responding",
+    snapshotStale
+      ? "AL RAKED Relay Firebase updates stopped"
+      : "AL RAKED Relay display stopped responding",
     [
-      "The Relay display heartbeat has stopped.",
+      "Sir,",
       "",
-      "Last heartbeat: " + formatFirebaseRelayAlertTime(incidentStartedAt),
+      "A Relay display fault has been confirmed.",
+      "",
+      snapshotStale
+        ? "The Relay display is online, but its Firebase snapshots have stopped updating."
+        : "The Relay display heartbeat has stopped.",
+      "",
+      (snapshotStale ? "Last snapshot: " : "Last heartbeat: ") +
+        formatFirebaseRelayAlertTime(incidentStartedAt),
       "Detected: " + formatFirebaseRelayAlertTime(detectedAt),
       "Connection state: " + String((health && health.connectionState) || "Unknown"),
+      "Last completed snapshot: " +
+        formatFirebaseRelayAlertTime(lastSnapshotAt),
       "Last Firebase contact: " +
         formatFirebaseRelayAlertTime(lastServerContactAt),
       "App version: " + String((health && health.appVersion) || "Unknown"),
       "",
-      "Automatic reload attempts will continue until the display checks in again.",
+      "Recovery protocol is active. Automatic reload attempts will continue until normal operation is confirmed.",
     ],
   );
 }
@@ -774,6 +849,7 @@ function sendFirebaseRelayRecoveryEmail(
   incidentStartedAt,
   recoveredAt,
   reloadAttempts,
+  incidentReason,
 ) {
   const downtimeMinutes = Math.max(
     1,
@@ -782,13 +858,21 @@ function sendFirebaseRelayRecoveryEmail(
   return sendFirebaseRelayMonitorEmail(
     "AL RAKED Relay display recovered",
     [
-      "The Relay display is reporting normally again.",
+      "Sir,",
+      "",
+      "Relay display recovery confirmed. The system is reporting normally again.",
       "",
       "Recovered: " + formatFirebaseRelayAlertTime(recoveredAt),
       "Approximate interruption: " + downtimeMinutes + " minute(s)",
+      "Recovered condition: " +
+        (incidentReason === "snapshot-stale"
+          ? "Firebase snapshots were stale"
+          : "Display heartbeat was stale"),
       "Reload attempts: " + Number(reloadAttempts || 0),
       "Connection state: " + String((health && health.connectionState) || "Unknown"),
       "App version: " + String((health && health.appVersion) || "Unknown"),
+      "",
+      "Monitoring remains active. All recovery systems are standing by.",
     ],
   );
 }
@@ -801,8 +885,13 @@ function testRelayHealthEmail() {
   const sent = sendFirebaseRelayMonitorEmail(
     "AL RAKED Relay monitor test",
     [
-      "The Relay failure and recovery email monitor is configured correctly.",
+      "Sir,",
+      "",
+      "Relay monitor diagnostic completed successfully.",
+      "Failure detection, recovery commands and email reporting are configured correctly.",
       "Tested: " + formatFirebaseRelayAlertTime(Date.now()),
+      "",
+      "All monitoring systems are standing by.",
     ],
   );
   if (!sent) throw new Error("The Relay test email could not be sent.");
