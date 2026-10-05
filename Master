@@ -1994,6 +1994,13 @@ function emailPerformanceReport(skipCalc) {
       subject: `${subjectDate} - Al Raked Performance Report`,
 
       body: "Daily operational report attached.\n\n" + auditText,
+      body:
+        "Sir,\n\n" +
+        "Daily reporting protocol completed successfully.\n\n" +
+        "The operational report is attached.\n" +
+        "Price audit status: " +
+        auditText +
+        "\n\nAll scheduled reporting systems are standing by.",
 
       attachments: attachments,
     });
@@ -2006,6 +2013,14 @@ function emailPerformanceReport(skipCalc) {
       to: "imhaninmohd@gmail.com",
       subject: "Performance Report FAILED",
       body: String(err),
+      subject: "AL RAKED Performance Report: Attention Required",
+      body:
+        "Sir,\n\n" +
+        "A fault was detected while preparing the performance report. " +
+        "Automatic completion was not possible.\n\n" +
+        "Diagnostic detail:\n" +
+        String(err) +
+        "\n\nManual review is required.",
     });
   }
 }
@@ -2534,12 +2549,6 @@ function createTriggers() {
     .everyMinutes(10)
     .create();
 
-  // Keep the visible freshness marker current without rebuilding the report.
-  ScriptApp.newTrigger("refreshReportTimestamp")
-    .timeBased()
-    .everyMinutes(5)
-    .create();
-
   // Remove only automatically named sheets such as Sheet12 or Sheet123.
   ScriptApp.newTrigger("deleteAccidentalNumberedSheets")
     .timeBased()
@@ -2886,6 +2895,13 @@ function sendDailyReportStage(state, referenceDate) {
     to: "alrakedcarwashingstation@gmail.com,Humaid.almessabi@gmail.com",
     subject: `${subjectDate} - Al Raked Performance Report`,
     body: "Daily operational report attached.\n\n" + state.dailyAuditText,
+    body:
+      "Sir,\n\n" +
+      "Daily reporting protocol completed successfully.\n\n" +
+      "The operational report is attached.\n" +
+      "Price audit status: " +
+      state.dailyAuditText +
+      "\n\nAll scheduled reporting systems are standing by.",
     attachments: attachments,
   });
 
@@ -3184,10 +3200,19 @@ function runReportPipelineWorker() {
         MailApp.sendEmail({
           to: "imhaninmohd@gmail.com",
           subject: "Al Raked Report Pipeline FAILED",
+          subject: "AL RAKED Report Pipeline: Recovery Required",
           body:
             `Stage: ${state.stage}\n` +
             `Date: ${state.dateKey}\n\n` +
             String(err),
+            "Sir,\n\n" +
+            "A fault was detected in the automated report pipeline. " +
+            "Three recovery attempts were unsuccessful.\n\n" +
+            `Affected stage: ${state.stage}\n` +
+            `Report date: ${state.dateKey}\n\n` +
+            "Diagnostic detail:\n" +
+            String(err) +
+            "\n\nThe pipeline has been secured in its current stage. Manual review is required.",
         });
         state.failureEmailSent = true;
         saveReportPipelineState(state);
