@@ -1776,9 +1776,17 @@ function handleFormResponseEdit(e) {
   }
 
   try {
-    handleFirebaseLiveDisplayStatusEdit(e);
+    handleFirebaseLiveDisplayEdit(e);
   } catch (err) {
-    Logger.log("Firebase live display status update failed: " + err);
+    Logger.log("Firebase live display edit reconciliation failed: " + err);
+  }
+}
+
+function handleFormResponseChange(e) {
+  try {
+    handleFirebaseLiveDisplayChange(e);
+  } catch (err) {
+    Logger.log("Firebase live display change reconciliation failed: " + err);
   }
 }
 
@@ -2495,6 +2503,10 @@ function createTriggers() {
       funcName === "onFormSubmit" ||
       funcName === "auditPriceChange" ||
       funcName === "handleFormResponseEdit" ||
+      funcName === "handleFormResponseChange" ||
+      funcName === "handleFirebaseLiveDisplayStatusEdit" ||
+      funcName === "handleFirebaseLiveDisplayEdit" ||
+      funcName === "handleFirebaseLiveDisplayChange" ||
       funcName === "reconcileFirebaseLiveDisplayStatuses" ||
       funcName === "cleanSlateProtocol" ||
       funcName === "calc" ||
@@ -2524,6 +2536,11 @@ function createTriggers() {
   ScriptApp.newTrigger("handleFormResponseEdit")
     .forSpreadsheet(SpreadsheetApp.getActive())
     .onEdit()
+    .create();
+
+  ScriptApp.newTrigger("handleFormResponseChange")
+    .forSpreadsheet(SpreadsheetApp.getActive())
+    .onChange()
     .create();
 
   ScriptApp.newTrigger("reconcileFirebaseLiveDisplayStatuses")
