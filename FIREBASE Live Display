@@ -42,6 +42,16 @@ const FIREBASE_RELAY_FAILURE_EMAIL_SENT_PROPERTY =
   "FIREBASE_RELAY_HEALTH_FAILURE_EMAIL_SENT";
 const FIREBASE_RELAY_INCIDENT_REASON_PROPERTY =
   "FIREBASE_RELAY_HEALTH_INCIDENT_REASON";
+const FIREBASE_RELAY_INCIDENT_LOG_PATH = "displayIncidents";
+const FIREBASE_RELAY_SUPERVISOR_PING_URL_PROPERTY =
+  "FIREBASE_RELAY_SUPERVISOR_PING_URL";
+const FIREBASE_RELAY_SUPERVISOR_LAST_PING_PROPERTY =
+  "FIREBASE_RELAY_SUPERVISOR_LAST_PING_AT";
+const FIREBASE_RELAY_SUPERVISOR_LAST_SUCCESS_PROPERTY =
+  "FIREBASE_RELAY_SUPERVISOR_LAST_SUCCESS_AT";
+const FIREBASE_RELAY_SUPERVISOR_LAST_ERROR_PROPERTY =
+  "FIREBASE_RELAY_SUPERVISOR_LAST_ERROR";
+const FIREBASE_RELAY_SUPERVISOR_PING_INTERVAL_MS = 5 * 60 * 1000;
 const FIREBASE_LIVE_DISPLAY_LAST_RECONCILE_PROPERTY =
   "FIREBASE_LIVE_DISPLAY_LAST_FULL_RECONCILE_AT";
 const FIREBASE_LIVE_DISPLAY_DIRTY_GENERATION_PROPERTY =
@@ -217,9 +227,11 @@ function reconcileFirebaseLiveDisplayStatuses() {
   if (!isFirebaseLiveDisplayConfigured()) return;
 
   try {
-    monitorRelayDisplayHealth();
+    const monitorChecked = monitorRelayDisplayHealth();
+    if (monitorChecked) reportFirebaseRelaySupervisorSuccess();
   } catch (err) {
     Logger.log("Relay health monitor failed: " + err);
+    reportFirebaseRelaySupervisorFailure(err);
   }
 
   reconcileFirebaseLiveDisplaySnapshot(false, "");
@@ -629,7 +641,7 @@ function publishFirebaseLiveDisplayEntry(entry) {
 
 function monitorRelayDisplayHealth() {
   if (!isFirebaseLiveDisplayConfigured() || !isFirebaseRelayHealthWindow()) {
-    return;
+    return false;
   }
 
   const properties = PropertiesService.getScriptProperties();
@@ -639,7 +651,7 @@ function monitorRelayDisplayHealth() {
         "true",
     ).toLowerCase() === "false"
   ) {
-    return;
+    return false;
   }
 
   const now = new Date();
@@ -666,7 +678,7 @@ function monitorRelayDisplayHealth() {
     if (armedDate && armedDate !== today) {
       resetFirebaseRelayHealthMonitorState(properties, true);
     }
-    return;
+    return true;
   }
 
   if (armedDate !== today) {
@@ -686,23 +698,40 @@ function monitorRelayDisplayHealth() {
   const snapshotAge = Number.isFinite(lastSnapshotAt) && lastSnapshotAt > 0
     ? Math.max(0, nowMs - lastSnapshotAt)
     : 0;
+  const previousAttempts = Number(
+    properties.getProperty(FIREBASE_RELAY_MONITOR_ATTEMPTS_PROPERTY) || "0",
+  );
+  let incidentStartedAt = Number(
+    properties.getProperty(FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY) || "0",
+  );
+  const previousLoadId = String(
+    properties.getProperty(FIREBASE_RELAY_MONITOR_PREVIOUS_LOAD_PROPERTY) || "",
+  );
+  const lastCommandId = String(
+    properties.getProperty(FIREBASE_RELAY_MONITOR_LAST_COMMAND_PROPERTY) || "",
+  );
+  const currentLoadId = String((health && health.loadId) || "");
+  const currentCommandId = String((health && health.lastCommandId) || "");
+  const reloadUnconfirmed = Boolean(
+    incidentStartedAt > 0 &&
+      previousAttempts > 0 &&
+      previousLoadId &&
+      (currentLoadId === previousLoadId ||
+        (lastCommandId && currentCommandId !== lastCommandId)),
+  );
   const incidentReason =
     heartbeatAge > FIREBASE_RELAY_HEARTBEAT_STALE_MS
       ? "heartbeat-stale"
       : snapshotAge > FIREBASE_RELAY_SNAPSHOT_STALE_MS
         ? "snapshot-stale"
-        : "";
+        : reloadUnconfirmed
+          ? "reload-unconfirmed"
+          : "";
   const previousIncidentReason = String(
     properties.getProperty(FIREBASE_RELAY_INCIDENT_REASON_PROPERTY) || "",
   );
 
   if (!incidentReason) {
-    const previousAttempts = Number(
-      properties.getProperty(FIREBASE_RELAY_MONITOR_ATTEMPTS_PROPERTY) || "0",
-    );
-    const incidentStartedAt = Number(
-      properties.getProperty(FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY) || "0",
-    );
     if (incidentStartedAt > 0) {
       sendFirebaseRelayRecoveryEmail(
         health,
@@ -711,6 +740,15 @@ function monitorRelayDisplayHealth() {
         previousAttempts,
         previousIncidentReason,
       );
+      writeFirebaseRelayIncidentEvent("recovered", {
+        incidentStartedAt: incidentStartedAt,
+        recoveredAt: nowMs,
+        reason: previousIncidentReason,
+        reloadAttempts: previousAttempts,
+        previousLoadId: previousLoadId,
+        currentLoadId: currentLoadId,
+        commandId: lastCommandId,
+      });
     }
     if (previousAttempts > 0) {
       Logger.log(
@@ -725,7 +763,7 @@ function monitorRelayDisplayHealth() {
         health.loadId || "",
       ),
     });
-    return;
+    return true;
   }
 
   if (previousIncidentReason !== incidentReason) {
@@ -747,14 +785,13 @@ function monitorRelayDisplayHealth() {
     Logger.log(
       (incidentReason === "snapshot-stale"
         ? "Relay Firebase snapshot is stale"
-        : "Relay heartbeat is stale") + "; awaiting confirmation check.",
+        : incidentReason === "reload-unconfirmed"
+          ? "Relay reload has not produced a new confirmed session"
+          : "Relay heartbeat is stale") + "; awaiting confirmation check.",
     );
-    return;
+    return true;
   }
 
-  let incidentStartedAt = Number(
-    properties.getProperty(FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY) || "0",
-  );
   if (!incidentStartedAt) {
     const lastHealthyAt = incidentReason === "snapshot-stale"
       ? lastSnapshotAt
@@ -764,6 +801,14 @@ function monitorRelayDisplayHealth() {
       FIREBASE_RELAY_INCIDENT_STARTED_PROPERTY,
       String(incidentStartedAt),
     );
+    writeFirebaseRelayIncidentEvent("detected", {
+      incidentStartedAt: incidentStartedAt,
+      detectedAt: nowMs,
+      reason: incidentReason,
+      loadId: currentLoadId,
+      appVersion: String((health && health.appVersion) || ""),
+      connectionState: String((health && health.connectionState) || ""),
+    });
   }
   if (
     properties.getProperty(FIREBASE_RELAY_FAILURE_EMAIL_SENT_PROPERTY) !==
@@ -783,9 +828,7 @@ function monitorRelayDisplayHealth() {
     }
   }
 
-  const attempts = Number(
-    properties.getProperty(FIREBASE_RELAY_MONITOR_ATTEMPTS_PROPERTY) || "0",
-  );
+  const attempts = previousAttempts;
   const lastReloadAt = Number(
     properties.getProperty(FIREBASE_RELAY_MONITOR_LAST_RELOAD_PROPERTY) || "0",
   );
@@ -793,7 +836,7 @@ function monitorRelayDisplayHealth() {
     attempts < FIREBASE_RELAY_RAPID_RELOAD_LIMIT
       ? FIREBASE_RELAY_RAPID_RELOAD_COOLDOWN_MS
       : FIREBASE_RELAY_SLOW_RELOAD_COOLDOWN_MS;
-  if (lastReloadAt && nowMs - lastReloadAt < cooldown) return;
+  if (lastReloadAt && nowMs - lastReloadAt < cooldown) return true;
 
   const command = writeFirebaseRelayReloadCommand(
     incidentReason,
@@ -807,6 +850,13 @@ function monitorRelayDisplayHealth() {
       (health && health.loadId) || "",
     ),
   });
+  writeFirebaseRelayIncidentEvent("reload-command", {
+    issuedAt: nowMs,
+    reason: incidentReason,
+    attempt: attempts + 1,
+    commandId: command.id,
+    previousLoadId: String((health && health.loadId) || ""),
+  });
   Logger.log(
     (incidentReason === "snapshot-stale"
       ? "Relay Firebase snapshot stale for "
@@ -819,6 +869,103 @@ function monitorRelayDisplayHealth() {
       command.id +
       " sent.",
   );
+  return true;
+}
+
+function reportFirebaseRelaySupervisorSuccess() {
+  const properties = PropertiesService.getScriptProperties();
+  const nowMs = Date.now();
+  properties.setProperties({
+    [FIREBASE_RELAY_SUPERVISOR_LAST_SUCCESS_PROPERTY]: String(nowMs),
+    [FIREBASE_RELAY_SUPERVISOR_LAST_ERROR_PROPERTY]: "",
+  });
+
+  const pingUrl = String(
+    properties.getProperty(FIREBASE_RELAY_SUPERVISOR_PING_URL_PROPERTY) || "",
+  ).trim();
+  if (!pingUrl) return;
+
+  const lastPingAt = Number(
+    properties.getProperty(FIREBASE_RELAY_SUPERVISOR_LAST_PING_PROPERTY) || "0",
+  );
+  if (lastPingAt && nowMs - lastPingAt < FIREBASE_RELAY_SUPERVISOR_PING_INTERVAL_MS) {
+    return;
+  }
+
+  try {
+    const response = UrlFetchApp.fetch(pingUrl, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({
+        service: "al-raked-relay-supervisor",
+        status: "ok",
+        checkedAt: new Date(nowMs).toISOString(),
+      }),
+      muteHttpExceptions: true,
+    });
+    const status = response.getResponseCode();
+    if (status < 200 || status >= 300) {
+      throw new Error("External supervisor ping returned HTTP " + status);
+    }
+    properties.setProperty(
+      FIREBASE_RELAY_SUPERVISOR_LAST_PING_PROPERTY,
+      String(nowMs),
+    );
+  } catch (err) {
+    Logger.log("External Relay supervisor ping failed: " + err);
+  }
+}
+
+function reportFirebaseRelaySupervisorFailure(error) {
+  const message = String(error && error.message ? error.message : error).slice(0, 500);
+  PropertiesService.getScriptProperties().setProperty(
+    FIREBASE_RELAY_SUPERVISOR_LAST_ERROR_PROPERTY,
+    new Date().toISOString() + " | " + message,
+  );
+  writeFirebaseRelayIncidentEvent("supervisor-error", {
+    failedAt: Date.now(),
+    message: message,
+  });
+}
+
+function writeFirebaseRelayIncidentEvent(eventType, details) {
+  try {
+    if (!isFirebaseLiveDisplayConfigured()) return false;
+    const properties = PropertiesService.getScriptProperties();
+    const databaseUrl = properties
+      .getProperty("FIREBASE_DATABASE_URL")
+      .replace(/\/$/, "");
+    const monthKey = Utilities.formatDate(
+      new Date(),
+      FIREBASE_LIVE_DISPLAY_TIME_ZONE,
+      "yyyy-MM",
+    );
+    const eventId = Date.now() + "-" + Utilities.getUuid();
+    const response = UrlFetchApp.fetch(
+      databaseUrl + "/" + FIREBASE_RELAY_INCIDENT_LOG_PATH + "/" + monthKey + "/" + eventId + ".json",
+      {
+        method: "put",
+        contentType: "application/json",
+        headers: {
+          Authorization: "Bearer " + getFirebaseLiveDisplayAccessToken(),
+        },
+        payload: JSON.stringify({
+          eventType: String(eventType || "unknown"),
+          recordedAt: new Date().toISOString(),
+          details: details || {},
+        }),
+        muteHttpExceptions: true,
+      },
+    );
+    const status = response.getResponseCode();
+    if (status < 200 || status >= 300) {
+      throw new Error("Firebase incident log returned HTTP " + status);
+    }
+    return true;
+  } catch (err) {
+    Logger.log("Relay incident history write failed: " + err);
+    return false;
+  }
 }
 
 function isFirebaseRelayHealthWindow() {
@@ -916,8 +1063,11 @@ function sendFirebaseRelayFailureEmail(
   const lastServerContactAt = Number(health && health.lastServerContactAt);
   const lastSnapshotAt = Number(health && health.lastSnapshotAt);
   const snapshotStale = incidentReason === "snapshot-stale";
+  const reloadUnconfirmed = incidentReason === "reload-unconfirmed";
   return sendFirebaseRelayMonitorEmail(
-    snapshotStale
+    reloadUnconfirmed
+      ? "AL RAKED Relay reload not confirmed"
+      : snapshotStale
       ? "AL RAKED Relay Firebase updates stopped"
       : "AL RAKED Relay display stopped responding",
     [
@@ -925,11 +1075,17 @@ function sendFirebaseRelayFailureEmail(
       "",
       "A Relay display fault has been confirmed.",
       "",
-      snapshotStale
+      reloadUnconfirmed
+        ? "A reload command was sent, but no new TV session has reported back."
+        : snapshotStale
         ? "The Relay display is online, but its Firebase snapshots have stopped updating."
         : "The Relay display heartbeat has stopped.",
       "",
-      (snapshotStale ? "Last snapshot: " : "Last heartbeat: ") +
+      (snapshotStale
+        ? "Last snapshot: "
+        : reloadUnconfirmed
+          ? "Incident began: "
+          : "Last heartbeat: ") +
         formatFirebaseRelayAlertTime(incidentStartedAt),
       "Detected: " + formatFirebaseRelayAlertTime(detectedAt),
       "Connection state: " + String((health && health.connectionState) || "Unknown"),
@@ -938,6 +1094,7 @@ function sendFirebaseRelayFailureEmail(
       "Last Firebase contact: " +
         formatFirebaseRelayAlertTime(lastServerContactAt),
       "App version: " + String((health && health.appVersion) || "Unknown"),
+      "TV session: " + String((health && health.loadId) || "Unknown"),
       "",
       "Recovery protocol is active. Automatic reload attempts will continue until normal operation is confirmed.",
     ],
@@ -967,8 +1124,12 @@ function sendFirebaseRelayRecoveryEmail(
       "Recovered condition: " +
         (incidentReason === "snapshot-stale"
           ? "Firebase snapshots were stale"
+          : incidentReason === "reload-unconfirmed"
+            ? "Reload confirmation was delayed"
           : "Display heartbeat was stale"),
       "Reload attempts: " + Number(reloadAttempts || 0),
+      "Confirmed TV session: " + String((health && health.loadId) || "Unknown"),
+      "Confirmed command: " + String((health && health.lastCommandId) || "Unknown"),
       "Connection state: " + String((health && health.connectionState) || "Unknown"),
       "App version: " + String((health && health.appVersion) || "Unknown"),
       "",
