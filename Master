@@ -1790,6 +1790,255 @@ function handleFormResponseChange(e) {
   }
 }
 
+// Standard oil-entry order:
+// Brand -> service interval -> quantity -> filter status.
+//
+// The normalizer is intentionally conservative. It changes an entry only when
+// a known brand and one valid oil quantity can be identified, and when no
+// unfamiliar product or vehicle wording remains. New oil types therefore stay
+// exactly as entered until their brand/wording is reviewed and added here.
+const OIL_ENTRY_COLUMN = 8; // H
+const OIL_STANDARD_BRAND_RULES = Object.freeze([
+  { name: "Ford Motorcraft", pattern: /FORD\s+MOTORCRAFT/i },
+  { name: "ADNOC", pattern: /ADNOC/i },
+  { name: "Shell", pattern: /SHE\s*['’]?\s*LL|SHELL|SHEL|SELL/i },
+  { name: "Hyundai", pattern: /HYUNDAI/i },
+  { name: "Nissan", pattern: /NISSAN/i },
+  { name: "Toyota", pattern: /TOYOTA/i },
+  { name: "Lexus", pattern: /LEXUS|LEXIS|LEXLIS/i },
+  { name: "Castrol", pattern: /CASTROL/i },
+  { name: "Valvoline", pattern: /VALVOLINE/i },
+  { name: "Ford", pattern: /FORD/i },
+]);
+
+function keepOilEntryUnchanged_(originalValue, reason) {
+  return {
+    changed: false,
+    value: originalValue,
+    reason: reason,
+  };
+}
+
+function removeOilMatch_(text, match) {
+  return (
+    text.slice(0, match.index) +
+    " " +
+    text.slice(match.index + match[0].length)
+  );
+}
+
+function formatOilInteger_(value) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function formatOilQuantity_(value) {
+  return String(Number(Number(value).toFixed(2)));
+}
+
+function standardizeOilEntry(rawValue) {
+  const originalValue = rawValue == null ? "" : String(rawValue);
+  if (!originalValue.trim()) {
+    return keepOilEntryUnchanged_(originalValue, "blank");
+  }
+
+  // Protect phone numbers, IDs and other long numeric values from alteration.
+  if (/\d{7,}/.test(originalValue)) {
+    return keepOilEntryUnchanged_(originalValue, "long-number");
+  }
+
+  let working = originalValue
+    .toUpperCase()
+    .replace(/[’`]/g, "'")
+    .replace(/(\d)\s*L\s*WITH\b/g, "$1L WITH")
+    .replace(/\bWITH\s+OUT\b/g, "WITHOUT");
+
+  let brandRule = null;
+  let brandMatch = null;
+
+  for (let i = 0; i < OIL_STANDARD_BRAND_RULES.length; i++) {
+    const match = working.match(OIL_STANDARD_BRAND_RULES[i].pattern);
+    if (match) {
+      brandRule = OIL_STANDARD_BRAND_RULES[i];
+      brandMatch = match;
+      break;
+    }
+  }
+
+  if (!brandRule) {
+    return keepOilEntryUnchanged_(originalValue, "unknown-brand");
+  }
+
+  working = removeOilMatch_(working, brandMatch);
+
+  // Intervals such as 5 km, 5000, 10-4L and 15/5L are all retained as
+  // their explicit thousand-kilometre value. No guessed correction is made:
+  // 1000 remains 1,000 and 13000 remains 13,000.
+  let intervalKm = null;
+  let intervalMatch = working.match(/\b(\d{3,5})\s*(?:KM)?\b/i);
+
+  if (intervalMatch) {
+    intervalKm = Number(intervalMatch[1]);
+  } else {
+    // Prefer a leading package pattern such as 10-6L over a later mistyped
+    // quantity such as 6km. This avoids swapping the interval and quantity.
+    intervalMatch = working.match(
+      /^[\s,.;:'"()\-_/]*(\d{1,2})\s*[-,/]\s*(?=\d)/i,
+    );
+    if (intervalMatch) {
+      intervalKm = Number(intervalMatch[1]) * 1000;
+    } else {
+      intervalMatch = working.match(/\b(\d{1,2})\s*K(?:M)?\b/i);
+      if (intervalMatch) {
+        intervalKm = Number(intervalMatch[1]) * 1000;
+      } else {
+        intervalMatch = working.match(
+          /^[\s,.;:'"()\-_/]*(\d{1,2})(?=\s+\d+(?:[.,]\d+)?\s*(?:L|LITER|LITRE|LITAR|LITTER|LITR|LTR|LITRR|LITTLE|LITE)\b)/i,
+        );
+        if (intervalMatch) intervalKm = Number(intervalMatch[1]) * 1000;
+      }
+    }
+  }
+
+  if (intervalMatch) working = removeOilMatch_(working, intervalMatch);
+  if (intervalKm != null && (intervalKm < 1000 || intervalKm > 50000)) {
+    return keepOilEntryUnchanged_(originalValue, "invalid-interval");
+  }
+
+  // Repair only punctuation patterns that clearly surround a litre value.
+  working = working
+    .replace(/(\d+)\s*L\s*[.,']\s*(\d+)/gi, "$1.$2 L")
+    .replace(
+      /(\d+)\s*[,']\s*(\d+)\s*(?=L|LITER|LITRE|LITAR|LITTER|LITR|LTR|LITRR|LITTLE|LITE)/gi,
+      "$1.$2 ",
+    )
+    .replace(
+      /(\d+)\s*\.\s*(?=L|LITER|LITRE|LITAR|LITTER|LITR|LTR|LITRR|LITTLE|LITE)/gi,
+      "$1 ",
+    );
+
+  const quantityPattern =
+    /(\d+(?:\.\d+)?)\s*(?:LITERS?|LITRES?|LITAR|LITTER|LITR|LTR|LITRR|LITTLE|LITE|L)\b/i;
+  let quantityMatch = working.match(quantityPattern);
+  let quantity = null;
+
+  if (quantityMatch) {
+    quantity = Number(quantityMatch[1]);
+    working = removeOilMatch_(working, quantityMatch);
+
+    if (quantityPattern.test(working)) {
+      return keepOilEntryUnchanged_(originalValue, "multiple-quantities");
+    }
+  } else if (intervalKm != null) {
+    // A unit may be omitted in otherwise structured entries such as
+    // "ADNOC 10-4.5 with filter". Accept one remaining number only.
+    working = working.replace(/(\d+)\s*[,']\s*(\d+)/g, "$1.$2");
+    quantityMatch = working.match(/\b\d+(?:\.\d+)?\b/);
+
+    if (quantityMatch) {
+      const withoutFirstQuantity = removeOilMatch_(working, quantityMatch);
+      if (/\b\d+(?:\.\d+)?\b/.test(withoutFirstQuantity)) {
+        return keepOilEntryUnchanged_(originalValue, "multiple-quantities");
+      }
+
+      quantity = Number(quantityMatch[0]);
+      working = withoutFirstQuantity;
+    }
+  }
+
+  if (quantity == null || !isFinite(quantity) || quantity < 0.25 || quantity > 25) {
+    return keepOilEntryUnchanged_(originalValue, "missing-or-invalid-quantity");
+  }
+
+  const hasFilter = /\b(?:FILTER|FILER|FILTE)\b/i.test(working);
+  const hasFree = /\bFREE\b/i.test(working);
+  const hasNoFilter =
+    /\b(?:WITHOUT|NO)\b[^A-Z0-9]*(?:FILTER|FILER|FILTE)\b/i.test(
+      working,
+    );
+  const hasOriginalFilter =
+    /\b(?:ORIGINAL|ORGINAL)\b[^A-Z0-9]*(?:FILTER|FILER|FILTE)\b/i.test(
+      working,
+    ) ||
+    /\b(?:FILTER|FILER|FILTE)\b[^A-Z0-9]*(?:ORIGINAL|ORGINAL)\b/i.test(
+      working,
+    );
+
+  if (hasFree && !hasFilter) {
+    return keepOilEntryUnchanged_(originalValue, "ambiguous-free-status");
+  }
+  if (hasFree && hasNoFilter) {
+    return keepOilEntryUnchanged_(originalValue, "conflicting-filter-status");
+  }
+
+  if (hasFilter) {
+    working = working.replace(
+      /\b(?:WITH|THE|WITHOUT|NO|FILTER|FILER|FILTE|FREE|ORIGINAL|ORGINAL|AND)\b/gi,
+      " ",
+    );
+  }
+
+  working = working.replace(/\b(?:OIL|OILL|CHANGE|CHANGING|ONLY)\b/gi, " ");
+
+  // Any remaining word or number could identify a new product, vehicle or
+  // combined service. Preserve the original entry rather than discarding it.
+  const unexplained = working
+    .replace(/[\s,.;:'"()\[\]{}\-_/+*&]+/g, "")
+    .trim();
+  if (unexplained) {
+    return keepOilEntryUnchanged_(originalValue, "unrecognized-details");
+  }
+
+  const canonicalParts = [brandRule.name];
+  if (intervalKm != null) {
+    canonicalParts.push(formatOilInteger_(intervalKm) + " km");
+  }
+  canonicalParts.push(formatOilQuantity_(quantity) + " L");
+
+  if (hasFilter) {
+    if (hasNoFilter) {
+      canonicalParts.push("without filter");
+    } else {
+      canonicalParts.push(
+        "with " +
+          (hasOriginalFilter ? "original filter" : "filter") +
+          (hasFree ? " free" : ""),
+      );
+    }
+  }
+
+  const canonicalValue = canonicalParts.join(" ");
+  return {
+    changed: canonicalValue !== originalValue,
+    value: canonicalValue,
+    reason: "recognized-structured-oil",
+  };
+}
+
+function standardizeSubmittedOilEntry_(e) {
+  if (!e || !e.range) return null;
+
+  const sheet = e.range.getSheet();
+  if (sheet.getName() !== "Form Responses 1") return null;
+
+  const row = e.range.getRow();
+  if (row < 2) return null;
+
+  const oilCell = sheet.getRange(row, OIL_ENTRY_COLUMN);
+  const result = standardizeOilEntry(oilCell.getValue());
+
+  if (result.changed) oilCell.setValue(result.value);
+  if (e.values && e.values.length >= OIL_ENTRY_COLUMN) {
+    e.values[OIL_ENTRY_COLUMN - 1] = result.value;
+  }
+
+  Logger.log(
+    result.changed
+      ? `Oil entry standardized: ${result.value}`
+      : `Oil entry kept unchanged: ${result.reason}`,
+  );
+  return result;
+}
+
 function processFormSubmission(submittedRow) {
   const sheet =
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Form Responses 1");
@@ -3346,6 +3595,13 @@ function onFormSubmit(e) {
 
   try {
     lock.waitLock(30000);
+
+    try {
+      standardizeSubmittedOilEntry_(e);
+    } catch (err) {
+      // Oil cleanup must never prevent the form row or reports from processing.
+      Logger.log("Oil entry standardization failed: " + err);
+    }
 
     processFormSubmission(e.range.getRow());
     calc();
