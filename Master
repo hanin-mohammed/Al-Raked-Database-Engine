@@ -857,6 +857,20 @@ function buildOilDetailRows(oilMap, formatMoney) {
     ]);
 }
 
+function getOilBrandName_(oilValue) {
+  const original = oilValue == null ? "" : String(oilValue);
+  if (!original.trim()) return null;
+
+  const upper = original.toUpperCase().replace(/[’`]/g, "'");
+
+  for (let i = 0; i < OIL_STANDARD_BRAND_RULES.length; i++) {
+    if (OIL_STANDARD_BRAND_RULES[i].pattern.test(upper)) {
+      return OIL_STANDARD_BRAND_RULES[i].name;
+    }
+  }
+  return "Other / review";
+}
+
 function getLastReportRow(sheet) {
   const lastContentRow = Math.max(1, sheet.getLastRow());
   const values = sheet
@@ -937,6 +951,7 @@ function calc() {
   const foremanMap = {};
   const companyMap = {};
   const oilMap = {};
+  const oilBrandMap = {};
 
   let totalTodayIncl = 0,
     totalMonthIncl = 0;
@@ -1079,6 +1094,27 @@ function calc() {
       if (isThisMonth) {
         oilMap[oilChange].monthlyAmt += serviceAmt;
         oilMap[oilChange].monthlyCars++;
+      }
+
+      const oilBrand = getOilBrandName_(oilChange);
+      if (oilBrand && (isToday || isThisMonth)) {
+        if (!oilBrandMap[oilBrand]) {
+          oilBrandMap[oilBrand] = {
+            dailyEarnings: 0,
+            dailyChanges: 0,
+            monthlyEarnings: 0,
+            monthlyChanges: 0,
+          };
+        }
+
+        if (isToday) {
+          oilBrandMap[oilBrand].dailyEarnings += serviceAmt;
+          oilBrandMap[oilBrand].dailyChanges++;
+        }
+        if (isThisMonth) {
+          oilBrandMap[oilBrand].monthlyEarnings += serviceAmt;
+          oilBrandMap[oilBrand].monthlyChanges++;
+        }
       }
     }
 
@@ -1493,6 +1529,42 @@ function calc() {
       .setWrap(true);
   }
 
+  const oilBrandRows = Object.keys(oilBrandMap)
+    .sort(
+      (a, b) =>
+        oilBrandMap[b].monthlyChanges - oilBrandMap[a].monthlyChanges ||
+        a.localeCompare(b),
+    )
+    .map((brand) => [
+      brand,
+      formatMoney(oilBrandMap[brand].dailyEarnings),
+      oilBrandMap[brand].dailyChanges,
+      formatMoney(oilBrandMap[brand].monthlyEarnings),
+      oilBrandMap[brand].monthlyChanges,
+    ]);
+
+  const oilBrandHeaderRow = currentRow + 1;
+  writeTable(
+    "OIL BRAND MOVEMENT",
+    [
+      "BRAND",
+      "EARNINGS TODAY",
+      "OIL CHANGES TODAY",
+      "EARNINGS THIS MONTH",
+      "OIL CHANGES THIS MONTH",
+    ],
+    oilBrandRows,
+    [0],
+  );
+  sheet
+    .getRange(
+      oilBrandHeaderRow,
+      REPORT_START_COLUMN,
+      1,
+      5,
+    )
+    .setWrap(true);
+
   // Preserve the original per-type oil breakdown below the summary.
   const oilDetailRows = buildOilDetailRows(oilMap, formatMoney);
   writeTable(
@@ -1874,27 +1946,32 @@ function standardizeOilEntry(rawValue) {
   // their explicit thousand-kilometre value. No guessed correction is made:
   // 1000 remains 1,000 and 13000 remains 13,000.
   let intervalKm = null;
-  let intervalMatch = working.match(/\b(\d{3,5})\s*(?:KM)?\b/i);
+  let intervalMatch = working.match(/\b(\d{1,2})\s*,\s*000\s*KM\b/i);
 
   if (intervalMatch) {
-    intervalKm = Number(intervalMatch[1]);
+    intervalKm = Number(intervalMatch[1]) * 1000;
   } else {
-    // Prefer a leading package pattern such as 10-6L over a later mistyped
-    // quantity such as 6km. This avoids swapping the interval and quantity.
-    intervalMatch = working.match(
-      /^[\s,.;:'"()\-_/]*(\d{1,2})\s*[-,/]\s*(?=\d)/i,
-    );
+    intervalMatch = working.match(/\b(\d{3,5})\s*(?:KM)?\b/i);
     if (intervalMatch) {
-      intervalKm = Number(intervalMatch[1]) * 1000;
+      intervalKm = Number(intervalMatch[1]);
     } else {
-      intervalMatch = working.match(/\b(\d{1,2})\s*K(?:M)?\b/i);
+      // Prefer a leading package pattern such as 10-6L over a later mistyped
+      // quantity such as 6km. This avoids swapping the interval and quantity.
+      intervalMatch = working.match(
+        /^[\s,.;:'"()\-_/]*(\d{1,2})\s*[-,/]\s*(?=\d)/i,
+      );
       if (intervalMatch) {
         intervalKm = Number(intervalMatch[1]) * 1000;
       } else {
-        intervalMatch = working.match(
-          /^[\s,.;:'"()\-_/]*(\d{1,2})(?=\s+\d+(?:[.,]\d+)?\s*(?:L|LITER|LITRE|LITAR|LITTER|LITR|LTR|LITRR|LITTLE|LITE)\b)/i,
-        );
-        if (intervalMatch) intervalKm = Number(intervalMatch[1]) * 1000;
+        intervalMatch = working.match(/\b(\d{1,2})\s*K(?:M)?\b/i);
+        if (intervalMatch) {
+          intervalKm = Number(intervalMatch[1]) * 1000;
+        } else {
+          intervalMatch = working.match(
+            /^[\s,.;:'"()\-_/]*(\d{1,2})(?=\s+\d+(?:[.,]\d+)?\s*(?:L|LITER|LITRE|LITAR|LITTER|LITR|LTR|LITRR|LITTLE|LITE)\b)/i,
+          );
+          if (intervalMatch) intervalKm = Number(intervalMatch[1]) * 1000;
+        }
       }
     }
   }
